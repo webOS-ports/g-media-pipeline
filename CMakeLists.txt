@@ -50,6 +50,8 @@ link_directories(${GSTREAMER_LIBRARIES})
 
 if(${WEBOS_TARGET_MACHINE} STREQUAL "qemux86" OR ${WEBOS_TARGET_MACHINE} STREQUAL "qemux86-64")
     add_definitions(-DPLATFORM_QEMUX86)
+else()
+    add_definitions(-DPLATFORM_GENERIC)
 endif()
 
 add_subdirectory(src)

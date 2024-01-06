@@ -148,7 +148,9 @@ elseif (${WEBOS_TARGET_MACHINE} STREQUAL "qemux86" OR ${WEBOS_TARGET_MACHINE} ST
   install(FILES ./qemux86/gst_debug.conf DESTINATION /etc/g-media-pipeline)
   install(FILES ./qemux86/gst_elements.conf DESTINATION /etc/g-media-pipeline)
 else()
-  message(FATAL_ERROR the "Check WEBOS_TARGET_MACHINE: " ${WEBOS_TARGET_MACHINE})
+  message(STATUS "Using config & debug file for generic device (might not always work)")
+  install(FILES ./generic/gst_debug.conf DESTINATION /etc/g-media-pipeline)
+  install(FILES ./generic/gst_elements.conf DESTINATION /etc/g-media-pipeline)
 endif()
 
 install(TARGETS gmp-player DESTINATION lib)
