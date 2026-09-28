@@ -19,6 +19,7 @@
 #include <glib-unix.h>
 #include <gst/gst.h>
 #include <pbnjson.hpp>
+#include <algorithm>
 #include <regex>
 
 #include "PlayerFactory.h"
