@@ -33,26 +33,40 @@ Connector::Connector(void)
 
 Connector::~Connector(void)
 {
+    // A load that fails after the surface was attached never reaches
+    // detachSurface()/unregisterID(), so do it here: otherwise the
+    // compositor keeps the import and the display connection stays open.
+    if (isRegistered) {
+        detachSurface();
+        unregisterID();
+    }
 }
 
-bool Connector::registerID(const char *windowID, const char *pipelineID)
+bool Connector::registerID(const char *windowID, const char * /*pipelineID*/)
 {
     if (isRegistered)
         return false;
 
-    bool result = true;
     //This value doesn't have meaning now.
     //It is reserved variable of wayland.
     uint32_t exportedType = WL_WEBOS_FOREIGN_WEBOS_EXPORTED_TYPE_VIDEO_OBJECT;
 
-    result &= foreign->initialize();
-    result &= surface->initialize(foreign->getCompositor());
-    result &= importer->initialize(foreign->getWebosForeign(), windowID, exportedType);
+    // Each step needs the one before it: without a display there is no
+    // compositor, and the importer needs wl_webos_foreign, which a
+    // compositor may not offer. Calling on regardless crashes in libwayland.
+    if (!foreign->initialize() ||
+        !surface->initialize(foreign->getCompositor()) ||
+        !importer->initialize(foreign->getWebosForeign(), windowID, exportedType)) {
+        importer->finalize();
+        surface->finalize();
+        foreign->finalize();
+        return false;
+    }
     foreign->flush();
 
     isRegistered = true;
 
-    return result;
+    return true;
 }
 
 bool Connector::unregisterID(void)
