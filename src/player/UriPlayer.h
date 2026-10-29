@@ -74,6 +74,7 @@ class UriPlayer : public AbstractPlayer {
   GstElement *queue2_ = nullptr;
   GstElement *aSink = nullptr;
   guint bufferingTimer_id_ = 0;
+  guint busWatchId_ = 0;
   bool buffering_ = false;
   bool buffering_time_updated_ = false;
   gint64 buffered_time_ = -1;

@@ -195,7 +195,7 @@ bool UriRtpPlayer::LoadPipeline() {
 
   g_object_set(G_OBJECT(pSrcElement_), "uri", uri_.c_str(), NULL);
   GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline_));
-  gst_bus_add_watch(bus, UriPlayer::HandleBusMessage, this);
+  busWatchId_ = gst_bus_add_watch(bus, UriPlayer::HandleBusMessage, this);
   gst_bus_set_sync_handler(bus, UriPlayer::HandleSyncBusMessage,
                            &lsm_connector_, NULL);
 
