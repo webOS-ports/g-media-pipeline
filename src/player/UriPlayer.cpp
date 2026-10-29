@@ -247,10 +247,19 @@ bool UriPlayer::Seek(const int64_t msecond) {
     return false;
   }
 
+  // A target past the end makes an invalid segment (start > stop) in the
+  // demuxer/parser; go to the end instead, which ends the stream.
+  gint64 target = msecond * GST_MSECOND;
+  if (duration_ > 0 && target > duration_) {
+    GMP_INFO_PRINT("Seek: %" G_GINT64_FORMAT " ms is past the end, seeking to the end",
+                   msecond);
+    target = duration_;
+  }
+
   seeking_ = true;
   if (!gst_element_seek(pipeline_, (gdouble)play_rate_, GST_FORMAT_TIME,
                    GstSeekFlags(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
-                   GST_SEEK_TYPE_SET, msecond * GST_MSECOND,
+                   GST_SEEK_TYPE_SET, target,
                    GST_SEEK_TYPE_NONE, 0)) {
     seeking_ = false;
     return false;
