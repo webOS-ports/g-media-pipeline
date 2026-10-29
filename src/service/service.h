@@ -69,12 +69,17 @@ class Service {
   // exit
   static bool ExitEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt);
 
+  // Unloads what is loaded, then ends Wait(): for "exit" and SIGTERM.
+  bool Shutdown();
+
  private:
   explicit Service(const std::string& service_name);
   Service(const Service& s) = delete;
   void operator=(const Service& s) = delete;
 
   static Service *instance_;
+  static gmp::player::MediaPlayerClient *Client(const char *what);
+  bool Unload();
 
   std::unique_ptr<UMSConnector> umc_;
   std::unique_ptr<gmp::player::MediaPlayerClient> media_player_client_;

@@ -88,7 +88,11 @@ bool UriPlayer::Load(const std::string &str) {
   if (GetPlayerState() != base::playback_state_t::PLAYING)
     SetPlayerState(base::playback_state_t::LOADED);
 
-  this->SetReloading(gmp::parser::Parser(str.c_str()).get_start_time());
+  try {
+    this->SetReloading(gmp::parser::Parser(str.c_str()).get_start_time());
+  } catch (const gmp::parser::parser_error &e) {
+    GMP_DEBUG_PRINT("no start time: %s", e.what());
+  }
 
   GMP_DEBUG_PRINT("Load Done: %s", uri_.c_str());
   return true;
