@@ -24,13 +24,12 @@ namespace gmp { namespace dsi {
 
 class DSIGenerator {
     public:
-        DSIGenerator() : caps_(NULL), codec_buf_(NULL) {}
-        ~DSIGenerator() {}
+        DSIGenerator() = default;
+        virtual ~DSIGenerator() = default;
+        DSIGenerator(const DSIGenerator &) = delete;
+        DSIGenerator &operator=(const DSIGenerator &) = delete;
+        // Returns new caps, owned by the caller, or NULL.
         virtual GstCaps* GenerateSpecificInfo() = 0;
-
-    protected:
-        GstCaps *caps_;
-        GstBuffer *codec_buf_;
 };
 }  // namespace dsi
 }  // namespace gmp

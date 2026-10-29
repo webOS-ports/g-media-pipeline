@@ -29,6 +29,8 @@ DSIGeneratorFactory::DSIGeneratorFactory(const MEDIA_LOAD_DATA_T* loadData)
 
 std::shared_ptr<gmp::dsi::DSIGenerator> DSIGeneratorFactory::CreateDSIGenerator(const MEDIA_LOAD_DATA_T* loadData)
 {
+    if (!loadData)
+        return dsiPtr_;
     switch(loadData->audioCodec) {
        case GMP_AUDIO_CODEC_AAC: {
           dsiPtr_ = std::make_shared<gmp::dsi::DSIGeneratorAAC>(loadData); //audioObjectType, Channel, sampleRate

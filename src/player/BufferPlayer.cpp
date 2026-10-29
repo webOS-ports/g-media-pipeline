@@ -112,6 +112,7 @@ bool BufferPlayer::UnloadImpl() {
   videoSrcInfo_.reset();
 
   loadData_.reset();
+  audioSink_ = nullptr;  // went with the pipeline
 
   if (!UnRegisterTrack()) {
     GMP_DEBUG_PRINT("UnRegisterTrack failed ");
@@ -248,7 +249,6 @@ bool BufferPlayer::SetPlayRate(const double rate) {
   GMP_INFO_PRINT("rate: %f, position: %" PRId64 "duration: %" PRId64,
                    rate, position, duration_);
 
-  gint64 currentPlayPosition = 0;
   GstState curState = GST_STATE_NULL;
   GstClockTime newBaseTime = GST_CLOCK_TIME_NONE;
   gboolean reset_start_time = FALSE;
@@ -572,7 +572,7 @@ std::string StreamStatusName(int streamType) {
   };
 
   if (streamType >= 0 &&
-        streamType < (sizeof(streamStatusName)/sizeof(streamStatusName[0]))) {
+        static_cast<size_t>(streamType) < (sizeof(streamStatusName)/sizeof(streamStatusName[0]))) {
     return std::string(streamStatusName[streamType]);
   }
 
@@ -581,7 +581,7 @@ std::string StreamStatusName(int streamType) {
 }
 
 gboolean BufferPlayer::HandleBusMessage(
-    GstBus *bus, GstMessage *message, gpointer user_data) {
+    GstBus * /*bus*/, GstMessage *message, gpointer user_data) {
   GstMessageType messageType = GST_MESSAGE_TYPE(message);
   if (messageType != GST_MESSAGE_QOS && messageType != GST_MESSAGE_TAG) {
     GMP_INFO_PRINT("Element[ %s ][ %d ][ %s ]", GST_MESSAGE_SRC_NAME(message),
@@ -674,7 +674,7 @@ gboolean BufferPlayer::HandleBusMessage(
 }
 
 GstBusSyncReply BufferPlayer::HandleSyncBusMessage(
-    GstBus *bus, GstMessage *message, gpointer user_data)
+    GstBus * /*bus*/, GstMessage *message, gpointer user_data)
 {
   // This handler will be invoked synchronously, don't process any application
   // message handling here
@@ -692,6 +692,7 @@ GstBusSyncReply BufferPlayer::HandleSyncBusMessage(
       gst_structure_set(gst_context_writable_structure (context),
           "handle", G_TYPE_POINTER, connector->getDisplay(), nullptr);
       gst_element_set_context(GST_ELEMENT(GST_MESSAGE_SRC(message)), context);
+      gst_context_unref(context);
       goto drop;
     }
     case GST_MESSAGE_ELEMENT:{
@@ -753,7 +754,7 @@ gboolean BufferPlayer::NotifyCurrentTime(gpointer user_data) {
   if (pos < 0)
     return true;
 
-  if (player->cbFunction_ && player->currentPts_ != pos) {
+  if (player->cbFunction_ && player->currentPts_ != static_cast<guint64>(pos)) {
     player->currentPts_ = pos;
     gint64 currentPtsInMs = (gint64)(pos / GST_MSECOND);
     player->cbFunction_(NOTIFY_CURRENT_TIME, currentPtsInMs, nullptr, nullptr);
@@ -998,9 +999,11 @@ bool BufferPlayer::AddAudioSinkElement() {
     return false;
   }
 
-  std::string aSinkName = (use_audio ? "audio-sink" : "fake-sink");
-  audioSink_ = pf::ElementFactory::Create("custom", aSinkName,
-                                          display_path_);
+  // No gst_elements.conf has a "fake-sink" entry: without audio, use a
+  // fakesink.
+  audioSink_ = use_audio
+      ? pf::ElementFactory::Create("custom", "audio-sink", display_path_)
+      : gst_element_factory_make("fakesink", "audio-fakesink");
 
   //set stream-properties for pulsesink
   if (!RegisterTrack()) {
@@ -1174,7 +1177,8 @@ bool BufferPlayer::AddVideoSinkElement() {
    GMP_DEBUG_PRINT("Create and add video sink element");
 
   videoSink_ = pf::ElementFactory::Create("custom", "video-sink");
-  g_object_set(G_OBJECT(videoSink_), "qos", false, nullptr);
+  if (videoSink_)
+    g_object_set(G_OBJECT(videoSink_), "qos", false, nullptr);
 
   if (!AddAndLinkElement(videoSink_)) {
     GMP_DEBUG_PRINT("Failed to add & link video sink element");
@@ -1186,12 +1190,24 @@ bool BufferPlayer::AddVideoSinkElement() {
   return true;
 }
 
+// Undoes a CreatePipeline() that failed half way. With pipeline_ gone,
+// Unload() returns early and UnloadImpl() never runs, so the bus watch (it
+// points at this player) and the audiod track have to go here.
 void BufferPlayer::FreePipelineElements() {
   audioSrcInfo_.reset();
   videoSrcInfo_.reset();
 
-  gst_object_unref(pipeline_);
-  pipeline_ = NULL;
+  DisconnectBusCallback();
+  if (!UnRegisterTrack()) {
+    GMP_DEBUG_PRINT("UnRegisterTrack failed ");
+  }
+
+  if (pipeline_) {
+    gst_element_set_state(pipeline_, GST_STATE_NULL);
+    gst_object_unref(pipeline_);
+    pipeline_ = NULL;
+  }
+  audioSink_ = nullptr;
 }
 
 bool BufferPlayer::AddAndLinkElement(GstElement* new_element) {
@@ -1361,6 +1377,8 @@ bool BufferPlayer::SeekInternal(const int64_t msecond) {
                         GST_SEEK_TYPE_SET, msecond * GST_MSECOND,
                         GST_SEEK_TYPE_NONE, 0)) {
     GMP_DEBUG_PRINT("Seek failed!!!");
+    // The pipeline goes on from where it was; let the feeding go on too.
+    feedPossible_ = true;
     return false;
   }
 
@@ -1658,8 +1676,8 @@ void BufferPlayer::EnoughData(GstElement *gstAppSrc, gpointer userData) {
   }
 }
 
-gboolean BufferPlayer::SeekData(GstElement *gstAppSrc, guint64 position,
-                                gpointer userData) {
+gboolean BufferPlayer::SeekData(GstElement * /*gstAppSrc*/, guint64 /*position*/,
+                                gpointer /*userData*/) {
   GMP_DEBUG_PRINT("Appsrc signal : SeekData");
   return true;
 }
@@ -1737,7 +1755,7 @@ base::source_info_t BufferPlayer::GetSourceInfo(
 
   audio_stream_info.codec = loadData->audioCodec;
   audio_stream_info.bit_rate = loadData->bitRate;
-  audio_stream_info.sample_rate = loadData->bitsPerSample;
+  audio_stream_info.sample_rate = loadData->sampleRate;
   audio_stream_info.channels = loadData->channels;
 
   base::program_info_t program;
@@ -1788,47 +1806,6 @@ void BufferPlayer::SetAppSrcProperties(MEDIA_SRC_T* pAppSrcInfo,
     GMP_DEBUG_PRINT("app src properties set for[ %s ]", srcReadName);
     g_free(srcReadName);
   }
-}
-
-bool BufferPlayer::RegisterTrack(){
-  std::string stream_type;
-
-  const size_t array_size = sizeof(pf::ElementFactory::streamtype) / sizeof(pf::ElementFactory::streamtype[0]);
-  if (display_path_ < array_size) {
-      stream_type = pf::ElementFactory::streamtype[display_path_];
-  } else {
-      GMP_DEBUG_PRINT("Error: display_path_ index out of bounds");
-  }
-
-  pbnjson::JValue jsonValue = pbnjson::Object();
-  jsonValue.put("streamType", stream_type);
-  std::string jsonStr = jsonValue.stringify();
-
-  const std::string uri = "luna://com.webos.service.audio/registerTrack";
-  ResponseHandler nullcb = [&] (const char *s){
-    pbnjson::JValue payload = pbnjson::JDomParser::fromString(s);
-    bool returnValue = payload["returnValue"].asBool();
-    track_id_ = payload["trackId"].asString();
-    GstStructure* structure = gst_structure_new("props", "application.name", G_TYPE_STRING, track_id_.c_str(), nullptr);
-    g_object_set(audioSink_, "stream-properties", structure, nullptr);
-    gst_structure_free(structure);
-  };
-  bool ret = (lsClient_) ? lsClient_->CallAsync(uri.c_str(), jsonStr.c_str(),std::move(nullcb))
-                         : false;
-  return ret;
-}
-
-bool BufferPlayer::UnRegisterTrack(){
-  pbnjson::JValue jsonValue = pbnjson::Object();
-
-  jsonValue.put("trackId", track_id_);
-  std::string jsonStr = jsonValue.stringify();
-
-  const std::string uri = "luna://com.webos.service.audio/unregisterTrack";
-  ResponseHandler nullcb = [] (const char *){};
-  bool ret = (lsClient_) ? lsClient_->CallAsync(uri.c_str(), jsonStr.c_str(),std::move(nullcb))
-                         : false;
-  return ret;
 }
 
 void BufferPlayer::SetDebugDumpFileName() {

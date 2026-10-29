@@ -40,31 +40,15 @@ bool UriPlayerFactory::Register(const std::string &handlerName, pFuncHandlerCrea
 }
 
 bool UriPlayerFactory::UnRegister(const std::string &handlerName) {
-  std::shared_ptr<gmp::player::Player> handle = nullptr;
-  std::map<std::string, std::shared_ptr<gmp::player::Player>>::iterator it = mapUriPlayerTypeInfo_.begin();
-
-  for ( ; it != mapUriPlayerTypeInfo_.end(); ++it) {
-    if (handlerName == it->first) {
-      handle = it->second;
-      mapUriPlayerTypeInfo_.erase(handlerName);
-      return true;
-    }
-  }
-
-  return false;
+  return mapRegisterUriInfo_.erase(handlerName) > 0;
 }
 
+// Each call makes a new player, owned by the caller alone. (The factory
+// used to keep every player it made in a map, so the first one for a
+// protocol was never freed, and outlived main() with its pipeline.)
 std::shared_ptr<gmp::player::Player> UriPlayerFactory::CreateUriTypePlayer(const std::string &handlerName) {
-  std::shared_ptr<gmp::player::Player> handle = nullptr;
-  std::map<std::string, pFuncHandlerCreator>::iterator it = mapRegisterUriInfo_.begin();
-
-  for ( ; it != mapRegisterUriInfo_.end(); ++it) {
-    if (handlerName == it->first) {
-      handle = it->second();
-      mapUriPlayerTypeInfo_.insert(std::pair<const std::string,std::shared_ptr<gmp::player::Player>>(handlerName,handle));
-    }
-  }
-  return handle;
+  auto it = mapRegisterUriInfo_.find(handlerName);
+  return it != mapRegisterUriInfo_.end() ? it->second() : nullptr;
 }
 
 UriPlayerFactory *UriPlayerFactory::getInstance() {

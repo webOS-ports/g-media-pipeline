@@ -14,11 +14,14 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.16)
 
 project(g-media-pipeline)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+add_compile_options(-Wall -Wextra)
 
 if(NOT DEFINED WEBOS_INSTALL_ROOT)
   set(WEBOS_INSTALL_ROOT /usr/local/webos/)
@@ -48,7 +51,7 @@ set(GSTREAMER_LIBRARIES ${GSTPLAYER_LIBRARIES} ${GSTREAMER_LIBRARIES})
 include_directories(${GSTREAMER_INCLUDE_DIRS})
 link_directories(${GSTPLAYER_LIBRARY_DIRS} ${GSTREAMER_LIBRARY_DIRS})
 
-if(${WEBOS_TARGET_MACHINE} STREQUAL "qemux86" OR ${WEBOS_TARGET_MACHINE} STREQUAL "qemux86-64")
+if("${WEBOS_TARGET_MACHINE}" STREQUAL "qemux86" OR "${WEBOS_TARGET_MACHINE}" STREQUAL "qemux86-64")
     add_definitions(-DPLATFORM_QEMUX86)
 else()
     add_definitions(-DPLATFORM_GENERIC)
@@ -56,5 +59,10 @@ endif()
 
 add_subdirectory(src)
 add_subdirectory(files)
-add_subdirectory(test/uriplayer)
-add_subdirectory(test/bufferplayer)
+# Manual test players (they need a window from lsm_connector_exporter);
+# they used to be built and installed to /usr/sbin by every build.
+if (WEBOS_CONFIG_BUILD_TESTS)
+  add_subdirectory(test/uriplayer)
+  add_subdirectory(test/bufferplayer)
+  add_subdirectory(test/unit)
+endif()

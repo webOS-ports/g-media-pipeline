@@ -18,6 +18,7 @@
 
 #include <string>
 #include <set>
+#include <stdexcept>
 #include <utility>
 #include <cmath>
 #include <base/types.h>
@@ -52,10 +53,8 @@ ResourceRequestor::ResourceRequestor(const std::string& appId, const std::string
       umsRMC_->registerPipeline("media", appId_);           // only rmc case
       connectionId_ = (umsRMC_->getConnectionID() ?
                 std::string(umsRMC_->getConnectionID()) : std::string());   // after registerPipeline
-      if (connectionId_.empty()) {
-          GMP_DEBUG_PRINT("Failed to get connection ID");
-          exit(0);
-      }
+      if (connectionId_.empty())
+          throw std::runtime_error("Failed to get connection ID");
       // In unmanaged case, we should get display path like this currently
       umsRMC_->getDisplayId(appId_);
     }
@@ -65,12 +64,10 @@ ResourceRequestor::ResourceRequestor(const std::string& appId, const std::string
     }
   }
   catch (const std::exception &e) {
+    // This is a library: leave it to the caller what a failure means,
+    // rather than exit() the process (with status 0, at that).
     GMP_DEBUG_PRINT("Failed to create ResourceRequestor [%s]", e.what());
-    exit(0);
-  }
-
-  if (connectionId_.empty()) {
-    GMPASSERT(0);
+    throw;
   }
 
   umsRMC_->registerPolicyActionHandler(
@@ -86,6 +83,9 @@ ResourceRequestor::ResourceRequestor(const std::string& appId, const std::string
 
 ResourceRequestor::~ResourceRequestor() {
   releaseResource();
+  // Its destructor joins the thread that calls policyActionHandler(): do
+  // that now, while the members the handler uses are still alive.
+  umsRMC_.reset();
 }
 
 bool ResourceRequestor::calcResources(const std::string &display_mode, const int32_t display_path, std::string &resourceString, bool reacquiereInfo) {
@@ -104,8 +104,9 @@ bool ResourceRequestor::calcResources(const std::string &display_mode, const int
                                         audioResData_.version,
                                         audioResData_.channel);
     mrc::concatResourceList(&audioOptions, &AResource);
-    GMP_DEBUG_PRINT("AResource size:%lu, %s, %d",
-                     AResource.size(), AResource.front().type.c_str(), AResource.front().quantity);
+    if (!AResource.empty())
+      GMP_DEBUG_PRINT("AResource size:%zu, %s, %d",
+                       AResource.size(), AResource.front().type.c_str(), AResource.front().quantity);
     finalOptions.push_back(std::move(audioOptions));
   }
 
@@ -151,7 +152,7 @@ bool ResourceRequestor::calcResources(const std::string &display_mode, const int
 }
 
 
-bool ResourceRequestor::acquireResources(void* meta, PortResource_t& resourceMMap, const std::string &display_mode, gmp::base::disp_res_t & res, const int32_t display_path) {
+bool ResourceRequestor::acquireResources(void* /*meta*/, PortResource_t& resourceMMap, const std::string &display_mode, gmp::base::disp_res_t & res, const int32_t display_path) {
 
   string payload;
 
@@ -173,6 +174,7 @@ bool ResourceRequestor::acquireResources(void* meta, PortResource_t& resourceMMa
 
   try {
     parsePortInformation(response, resourceMMap, res);
+    std::lock_guard<std::mutex> lock(mutex_);
     parseResources(response, adecResource_, vdecResource_, false);
   } catch (const std::runtime_error & err) {
     GMP_DEBUG_PRINT("[%s:%d] err=%s, response:%s",
@@ -186,6 +188,7 @@ bool ResourceRequestor::acquireResources(void* meta, PortResource_t& resourceMMa
 
 bool ResourceRequestor::releaseResource() {
   bool returnValue = true;
+  std::lock_guard<std::mutex> lock(mutex_);
 
   if (!adecResource_.empty()) {
     if (!umsRMC_->release(adecResource_))
@@ -202,7 +205,7 @@ bool ResourceRequestor::releaseResource() {
   return returnValue;
 }
 
-bool ResourceRequestor::reacquireResources(void* meta, PortResource_t& resourceMMap, const std::string &display_mode, gmp::base::disp_res_t & res, const int32_t display_path) {
+bool ResourceRequestor::reacquireResources(void* /*meta*/, PortResource_t& resourceMMap, const std::string &display_mode, gmp::base::disp_res_t & res, const int32_t display_path) {
   std::string new_resource;
   string response;
 
@@ -213,7 +216,10 @@ bool ResourceRequestor::reacquireResources(void* meta, PortResource_t& resourceM
 
   JValue reaquire_obj = pbnjson::Object();
   reaquire_obj.put("new", new_resource);
-  reaquire_obj.put("old", vdecResource_);
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    reaquire_obj.put("old", vdecResource_);
+  }
 
   JSchemaFragment input_schema("{}");
   JGenerator serializer(nullptr);
@@ -231,6 +237,7 @@ bool ResourceRequestor::reacquireResources(void* meta, PortResource_t& resourceM
 
   try {
     parsePortInformation(response, resourceMMap, res);
+    std::lock_guard<std::mutex> lock(mutex_);
     parseResources(response, adecResource_, vdecResource_, true);
   } catch (const std::runtime_error & err) {
     GMP_DEBUG_PRINT("[%s:%d] err=%s, response:%s",
@@ -272,17 +279,27 @@ bool ResourceRequestor::policyActionHandler(const char *action,
   GMP_DEBUG_PRINT("policyActionHandler action:%s, resources:%s, type:%s, name:%s, id:%s",
         action, resources, requestorType, requestorName, connectionId);
   if (allowPolicy_) {
-    if ((nullptr != cb_) && !isUnloading_) {
-      cb_();
+    Functor cb;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      cb = cb_;
     }
-    if (umsRMC_->release(adecResource_) == false) {
+    if (cb && !isUnloading_) {
+      cb();
+    }
+    // Released here, so a later releaseResource() must not release them
+    // again.
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!adecResource_.empty() && umsRMC_->release(adecResource_) == false) {
       GMP_DEBUG_PRINT("release error in policyActionHandler: %s", adecResource_.c_str());
       returnValue = false;
     }
-    if (umsRMC_->release(vdecResource_) == false) {
+    if (!vdecResource_.empty() && umsRMC_->release(vdecResource_) == false) {
       GMP_DEBUG_PRINT("release error in policyActionHandler: %s", vdecResource_.c_str());
       returnValue = false;
     }
+    adecResource_.clear();
+    vdecResource_.clear();
     if (returnValue == false) {
       return false;
     }
@@ -291,7 +308,7 @@ bool ResourceRequestor::policyActionHandler(const char *action,
   return allowPolicy_;
 }
 
-bool ResourceRequestor::parsePortInformation(const std::string& payload, PortResource_t& resourceMMap, gmp::base::disp_res_t & res) {
+bool ResourceRequestor::parsePortInformation(const std::string& payload, PortResource_t& resourceMMap, gmp::base::disp_res_t & /*res*/) {
   JDomParser parser;
   JSchemaFragment input_schema("{}");
   if (!parser.parse(payload, input_schema)) {

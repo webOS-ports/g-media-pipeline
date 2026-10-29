@@ -15,6 +15,8 @@
 
 // SPDX-License-Identifier: Apache-2.0
 
+#include <vector>
+
 #include "DSIGenerator.h"
 #include "PlayerTypes.h"
 
@@ -27,7 +29,7 @@ class DSIGeneratorAAC : public DSIGenerator {
         GstCaps* GenerateSpecificInfo() override;
     private:
 
-        bool SetGstCodecData();
+        bool SetGstCodecData(GstCaps *caps) const;
 
         /* Gets the Sampling Frequency Index value, as defined by table 1.18 in ISO/IEC 14496-3 */
         guint8 GetFrequencyIndex(const guint32 &sampleRate);
@@ -37,8 +39,8 @@ class DSIGeneratorAAC : public DSIGenerator {
         guint8 channels_;
         guint8 audioObjectType_;
         guint32 sampleRate_;
-        guint8* audioCodecData_;
-        guint32 audioCodecDataSize_;
+        // A copy: the caller's codecData stays the caller's.
+        std::vector<guint8> audioCodecData_;
 };
 }  // namespace dsi
 }  // namespace gmp

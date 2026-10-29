@@ -29,12 +29,10 @@ namespace gmp { namespace pf {
 
 typedef std::shared_ptr<gmp::player::Player> (*pFuncHandlerCreator)();
 using RegisterUriMap = std::map< std::string, pFuncHandlerCreator > ;
-using UriPlayerTypeMap = std::map< std::string, std::shared_ptr<gmp::player::Player> > ;
 
 class UriPlayerFactory {
  private:
   RegisterUriMap mapRegisterUriInfo_;
-  UriPlayerTypeMap mapUriPlayerTypeInfo_;
   UriPlayerFactory();
 
  public:

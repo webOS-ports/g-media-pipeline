@@ -27,10 +27,42 @@
 #include "mediaresource/requestor.h"
 #include "service/service.h"
 #include "playerfactory/PlayerFactory.h"
+#include <charconv>
+#include <cstring>
+#include <limits>
 #include <memory>
 
 namespace gmp { namespace service {
 Service *Service::instance_ = nullptr;
+
+namespace {
+
+// The handlers are called from UMSConnector's C callbacks: an exception
+// (a stoll, a pbnjson or a Parser error on a bad message) must stop here.
+template <typename F>
+bool Guarded(const char *what, F &&f) {
+  try {
+    return f();
+  } catch (const std::exception &e) {
+    GMP_INFO_PRINT("%s failed: %s", what, e.what());
+  } catch (...) {
+    GMP_INFO_PRINT("%s failed", what);
+  }
+  return false;
+}
+
+}  // namespace
+
+// The player client, or NULL (and a log line) before a load or after an
+// unload: umediaserver queues commands until loaded, but anyone allowed on
+// the private bus can send them in any order.
+gmp::player::MediaPlayerClient *Service::Client(const char *what) {
+  if (!instance_ || !instance_->media_player_client_) {
+    GMP_INFO_PRINT("%s: nothing is loaded", what);
+    return nullptr;
+  }
+  return instance_->media_player_client_.get();
+}
 
 Service::Service(const std::string& service_name) {
   umc_ = std::make_unique<UMSConnector>(service_name, nullptr, nullptr, UMS_CONNECTOR_PRIVATE_BUS);
@@ -80,9 +112,24 @@ Service* Service::GetInstance(const std::string& service_name) {
 
 Service::~Service() {}
 
-void Service::Notify(const gint notification, const gint64 numValue, const gchar *strValue, void *payload) {
+void Service::Notify(const gint notification, const gint64 /*numValue*/, const gchar * /*strValue*/, void *payload) {
   gmp::parser::Composer composer;
   gmp::base::media_info_t mediaInfo = { media_id_ };
+  switch (notification) {
+    case NOTIFY_CURRENT_TIME:
+    case NOTIFY_SOURCE_INFO:
+    case NOTIFY_VIDEO_INFO:
+    case NOTIFY_AUDIO_INFO:
+    case NOTIFY_ERROR:
+    case NOTIFY_BUFFER_RANGE:
+      if (!payload) {
+        GMP_DEBUG_PRINT("notification(%d) without a payload", notification);
+        return;
+      }
+      break;
+    default:
+      break;
+  }
   switch (notification) {
     case NOTIFY_CURRENT_TIME: {
       gmp::base::time_t current_position  = *static_cast<gmp::base::time_t *>(payload);
@@ -97,7 +144,7 @@ void Service::Notify(const gint notification, const gint64 numValue, const gchar
     case NOTIFY_VIDEO_INFO: {
       base::video_info_t info = *static_cast<base::video_info_t*>(payload);
       composer.put("videoInfo", info);
-      GMP_INFO_PRINT("videoInfo: width %d, height %d", info.width, info.height);
+      GMP_INFO_PRINT("videoInfo: width %u, height %u", info.width, info.height);
       break;
     }
     case NOTIFY_AUDIO_INFO: {
@@ -150,8 +197,10 @@ void Service::Notify(const gint notification, const gint64 numValue, const gchar
       break;
     }
     default: {
+      // Not for umediaserver (resource acquisition, activity, ...): do not
+      // send the subscribers an empty "{}".
       GMP_DEBUG_PRINT("This notification(%d) can't be handled here!", notification);
-      break;
+      return;
     }
   }
   std::string payload_str = composer.result();
@@ -168,22 +217,34 @@ bool Service::Stop() {
 }
 
 // uMediaserver public API
-bool Service::LoadEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::LoadEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage *message, void * /*ctxt*/) {
+  return Guarded("load", [message] {
   std::string msg = instance_->umc_->getMessageText(message);
-  GMP_DEBUG_PRINT("%s", msg.c_str());
+  // The load carries the page's cookies, user agent and referer.
+  GMP_DEBUG_PRINT("load: %zu bytes", msg.size());
 
   pbnjson::JDomParser parser;
   if (!parser.parse(msg, pbnjson::JSchema::AllSchema())) {
-      GMP_DEBUG_PRINT("ERROR JDomParser.parse. msg=%s", msg.c_str());
+      GMP_DEBUG_PRINT("ERROR JDomParser.parse");
       return false;
   }
   pbnjson::JValue parsed = parser.getDom();
-  if (!parsed.hasKey("id") && parsed["id"].isString()) {
+  if (!parsed.hasKey("id") || !parsed["id"].isString()) {
     GMP_DEBUG_PRINT("id is invalid");
     return false;
   }
+
+  // A second load replaces the first: unload it properly first, so its
+  // audiod track and media resources go too.
+  if (instance_->media_player_client_) {
+    GMP_INFO_PRINT("load while loaded: unloading the previous media");
+    instance_->media_player_client_->Unload();
+    instance_->media_player_client_.reset();
+  }
+
   instance_->media_id_ = parsed["id"].asString();
-  instance_->app_id_ = parsed["options"]["option"]["appId"].asString();
+  pbnjson::JValue appId = parsed["options"]["option"]["appId"];
+  instance_->app_id_ = appId.isString() ? appId.asString() : std::string();
 
   instance_->media_player_client_ =
     std::make_unique<gmp::player::MediaPlayerClient>(instance_->app_id_, instance_->media_id_);
@@ -201,117 +262,162 @@ bool Service::LoadEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message
     instance_->Notify(NOTIFY_ERROR, 0, nullptr, static_cast<void*>(&error));
   }
   return ret;
+  });
 }
 
-bool Service::AttachEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::AttachEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
     return true;
 }
 
-bool Service::UnloadEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::UnloadEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
+  return Guarded("unload", [] { return instance_->Unload(); });
+}
+
+bool Service::Unload() {
+  if (!media_player_client_) {
+    GMP_DEBUG_PRINT("unload: nothing is loaded");
+    return true;
+  }
   bool ret;
-  ret = instance_->media_player_client_->Unload();
+  ret = media_player_client_->Unload();
   if (!ret) {
     base::error_t error;
     error.errorCode = MEDIA_MSG_ERR_LOAD;
     error.errorText = "Unload Failed";
-    instance_->Notify(NOTIFY_ERROR, 0, nullptr, static_cast<void*>(&error));
+    Notify(NOTIFY_ERROR, 0, nullptr, static_cast<void*>(&error));
   }
 
-  instance_->media_player_client_.reset();
-  instance_->Notify(NOTIFY_UNLOAD_COMPLETED, 0, nullptr, nullptr);
+  media_player_client_.reset();
+  Notify(NOTIFY_UNLOAD_COMPLETED, 0, nullptr, nullptr);
 
   return ret;
 }
 
+bool Service::Shutdown() {
+  GMP_INFO_PRINT("shutting down");
+  Guarded("unload", [this] { return Unload(); });
+  return Stop();
+}
+
 // media operations
-bool Service::PlayEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::PlayEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   GMP_DEBUG_PRINT("PlayEvent");
-  return instance_->media_player_client_->Play();
+  return Guarded("play", [] {
+    auto *client = Client("play");
+    return client && client->Play();
+  });
 }
 
-bool Service::PauseEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::PauseEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   GMP_DEBUG_PRINT("PauseEvent");
-  return instance_->media_player_client_->Pause();
+  return Guarded("pause", [] {
+    auto *client = Client("pause");
+    return client && client->Pause();
+  });
 }
 
-bool Service::SeekEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::SeekEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage *message, void * /*ctxt*/) {
   GMP_DEBUG_PRINT("SeekEvent");
-  int64_t position = std::stoll(instance_->umc_->getMessageText(message));
-  return instance_->media_player_client_->Seek(position);
+  return Guarded("seek", [message] {
+    auto *client = Client("seek");
+    if (!client)
+      return false;
+    // The body is the position in ms, as a bare number.
+    const char *text = instance_->umc_->getMessageText(message);
+    const char *end = text ? text + strlen(text) : nullptr;
+    int64_t position = 0;
+    auto r = std::from_chars(text, end, position);
+    if (!text || r.ec != std::errc() || r.ptr != end || position < 0 ||
+        position > std::numeric_limits<int>::max()) {
+      GMP_INFO_PRINT("seek: bad position '%s'", text ? text : "");
+      return false;
+    }
+    return client->Seek(static_cast<int>(position));
+  });
 }
 
-bool Service::StateChangeEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::StateChangeEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void * /*ctxt*/) {
   return instance_->umc_->addSubscriber(handle, message);
 }
 
-bool Service::UnsubscribeEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::UnsubscribeEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
-bool Service::SetUriEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::SetUriEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
-bool Service::SetPlayRateEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::SetPlayRateEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage *message, void * /*ctxt*/) {
   GMP_DEBUG_PRINT("SetPlayRateEvent");
-  gmp::parser::Parser parser(instance_->umc_->getMessageText(message));
-  return instance_->media_player_client_->SetPlaybackRate(parser.get<double>("playRate"));
+  return Guarded("setPlayRate", [message] {
+    auto *client = Client("setPlayRate");
+    if (!client)
+      return false;
+    gmp::parser::Parser parser(instance_->umc_->getMessageText(message));
+    return client->SetPlaybackRate(parser.get<double>("playRate"));
+  });
 }
 
-bool Service::SelectTrackEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::SelectTrackEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
-bool Service::SetUpdateIntervalEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::SetUpdateIntervalEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
-bool Service::SetUpdateIntervalKVEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::SetUpdateIntervalKVEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
-bool Service::ChangeResolutionEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::ChangeResolutionEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
-bool Service::SetStreamQualityEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::SetStreamQualityEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
-bool Service::SetPropertyEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::SetPropertyEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
-bool Service::SetVolumeEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::SetVolumeEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage *message, void * /*ctxt*/) {
   GMP_DEBUG_PRINT("SetVolumeEvent");
-  gmp::parser::Parser parser(instance_->umc_->getMessageText(message));
-  return instance_->media_player_client_->SetVolume(parser.get<int>("volume"));
+  return Guarded("setVolume", [message] {
+    auto *client = Client("setVolume");
+    if (!client)
+      return false;
+    gmp::parser::Parser parser(instance_->umc_->getMessageText(message));
+    return client->SetVolume(parser.get<int>("volume"));
+  });
 }
 
-bool Service::SetPlaneEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::SetPlaneEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
 // pipeline state query API
-bool Service::GetPipelineStateEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::GetPipelineStateEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
-bool Service::LogPipelineStateEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::LogPipelineStateEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
-bool Service::GetActivePipelinesEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::GetActivePipelinesEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
-bool Service::SetPipelineDebugStateEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
+bool Service::SetPipelineDebugStateEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
   return true;
 }
 
 // exit
-bool Service::ExitEvent(UMSConnectorHandle *handle, UMSConnectorMessage *message, void *ctxt) {
-  return instance_->umc_->stop();
+bool Service::ExitEvent(UMSConnectorHandle * /*handle*/, UMSConnectorMessage * /*message*/, void * /*ctxt*/) {
+  return instance_->Shutdown();
 }
 }  // namespace service
 }  // namespace gmp

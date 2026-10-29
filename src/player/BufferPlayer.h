@@ -78,8 +78,7 @@ class BufferPlayer : public AbstractPlayer {
     bool AddAndLinkElement(GstElement * target_element);
 
     /*for setting track volume*/
-    bool RegisterTrack();
-    bool UnRegisterTrack();
+    GstElement *TrackAudioSink() const override { return audioSink_; }
 
     /* for debugging */
     bool AddAudioDumpElement();

@@ -30,7 +30,7 @@ static gboolean print_field(GQuark field, const GValue* value, gpointer pfx)
   return TRUE;
 }
 
-static void print_caps(const GstCaps* caps, const gchar* pfx)
+[[maybe_unused]] static void print_caps(const GstCaps* caps, const gchar* pfx)
 {
   g_return_if_fail (caps != NULL);
 
@@ -77,9 +77,9 @@ StreamSource::StreamSource(const std::string& windowID)
   , multiQueue_(nullptr)
   , videoAppSink_(nullptr)
   , audioAppSink_(nullptr)
-  , media_player_client_(nullptr)
   , firstVideoSample(false)
   , firstAudioSample(false)
+  , media_player_client_(nullptr)
 {
 }
 
@@ -253,7 +253,7 @@ bool StreamSource::MakeLoadData(int64_t start_time, MEDIA_LOAD_DATA_T* load_data
   return true;
 }
 
-void StreamSource::ParseBinPadAddedCB(GstElement* element, GstPad* pad, gpointer userData)
+void StreamSource::ParseBinPadAddedCB(GstElement* /*element*/, GstPad* pad, gpointer userData)
 {
   StreamSource *streamSrc = reinterpret_cast<StreamSource *>(userData);
 
@@ -290,7 +290,7 @@ void StreamSource::ParseBinPadAddedCB(GstElement* element, GstPad* pad, gpointer
   g_free(mqPadName);
 }
 
-void StreamSource::MultiQueuePadAddedCB(GstElement* element, GstPad* pad, gpointer userData)
+void StreamSource::MultiQueuePadAddedCB(GstElement* /*element*/, GstPad* pad, gpointer userData)
 {
   StreamSource *streamSrc = reinterpret_cast<StreamSource *>(userData);
   gchar* mqPadName = gst_pad_get_name(pad);
@@ -537,7 +537,7 @@ void StreamSource::ClearResources()
   std::cout << "clear Done!" << std::endl;
 }
 
-void StreamSource::Notify(const gint notification, const gint64 numValue, const gchar* strValue, void* payload)
+void StreamSource::Notify(const gint notification, const gint64 /*numValue*/, const gchar* /*strValue*/, void* /*payload*/)
 {
   switch (notification) {
     case NOTIFY_LOAD_COMPLETED: {

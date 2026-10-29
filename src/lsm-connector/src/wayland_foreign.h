@@ -43,7 +43,6 @@ public:
     ~Foreign(void);
 
     bool initialize(void);
-    bool initializeImport(void);
     void finalize(void);
 
     void setCompositor(struct wl_compositor *compositor);

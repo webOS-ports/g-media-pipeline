@@ -74,6 +74,9 @@ TEST_F(WaylandForeignTest1, InitializeAndFinalize)
 
     //Assert
     EXPECT_EQ(expected, actual);
+
+    // finalize() used to leak the registry
+    EXPECT_TRUE(isAPICalled("wl_registry_destroy"));
 }
 
 class WaylandForeignTest2 : public ::testing::Test

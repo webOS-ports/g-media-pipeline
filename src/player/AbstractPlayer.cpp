@@ -34,11 +34,11 @@ AbstractPlayer::AbstractPlayer() :
 AbstractPlayer::~AbstractPlayer() {
 }
 
-bool AbstractPlayer::Load(const std::string &uri) {
+bool AbstractPlayer::Load(const std::string &/*uri*/) {
   return true;
 }
 
-bool AbstractPlayer::Load(const MEDIA_LOAD_DATA_T* loadData) {
+bool AbstractPlayer::Load(const MEDIA_LOAD_DATA_T* /*loadData*/) {
   return true;
 }
 
@@ -77,15 +77,15 @@ bool AbstractPlayer::Pause() {
   return true;
 }
 
-bool AbstractPlayer::SetPlayRate(const double rate) {
+bool AbstractPlayer::SetPlayRate(const double /*rate*/) {
   return true;
 }
 
-bool AbstractPlayer::Seek(const int64_t msecond) {
+bool AbstractPlayer::Seek(const int64_t /*msecond*/) {
   return true;
 }
 
-bool AbstractPlayer::SetVolume(int volume) {
+bool AbstractPlayer::SetVolume(int /*volume*/) {
   return false;
 }
 
@@ -97,7 +97,7 @@ bool AbstractPlayer::SetPlane(int planeId) {
 
 bool AbstractPlayer::SetDisplayPath(const uint32_t display_path) {
   GMP_DEBUG_PRINT("display_path: %u", display_path);
-  display_path_ = (display_path > SECONDARY_DISPLAY) ? DEFAULT_DISPLAY : display_path;
+  display_path_ = (display_path > SECONDARY_DISPLAY) ? static_cast<uint32_t>(DEFAULT_DISPLAY) : display_path;
   return true;
 }
 
@@ -105,7 +105,7 @@ void AbstractPlayer::notifyFunctionUMSPolicyAction() {
 }
 
 bool AbstractPlayer::UpdateVideoResData(
-    const gmp::base::source_info_t &sourceInfo) {
+    const gmp::base::source_info_t &/*sourceInfo*/) {
   return true;
 }
 
@@ -121,8 +121,8 @@ bool AbstractPlayer::Flush() {
   return true;
 }
 
-MEDIA_STATUS_T AbstractPlayer::Feed(const guint8* pBuffer,
-    guint32 bufferSize, guint64 pts, MEDIA_DATA_CHANNEL_T esData) {
+MEDIA_STATUS_T AbstractPlayer::Feed(const guint8* /*pBuffer*/,
+    guint32 /*bufferSize*/, guint64 /*pts*/, MEDIA_DATA_CHANNEL_T /*esData*/) {
   return MEDIA_NOT_IMPLEMENTED;
 }
 
@@ -130,9 +130,11 @@ void AbstractPlayer::SetGstreamerDebug() {
   pbnjson::JValue parsed
     = pbnjson::JDomParser::fromFile("/etc/g-media-pipeline/gst_debug.conf");
 
+  // Only GStreamer debug settings: without them, play on (the assert
+  // aborted every player, as NDEBUG is not defined).
   if (!parsed.isObject()) {
-    GMP_DEBUG_PRINT("Debug file parsing error. Please check gst_debug.conf");
-    GMPASSERT(0);
+    GMP_INFO_PRINT("Debug file parsing error. Please check gst_debug.conf");
+    return;
   }
 
   pbnjson::JValue debug = parsed["gst_debug"];
@@ -149,6 +151,75 @@ void AbstractPlayer::SetGstreamerDebug() {
 
 void AbstractPlayer::SetUseAudio() {
   use_audio = gmp::pf::ElementFactory::GetUseAudioProperty();
+}
+
+namespace {
+
+bool SendUnregisterTrack(gmp::LunaServiceClient *client,
+                         const std::string &track_id) {
+  pbnjson::JValue jsonValue = pbnjson::Object();
+  jsonValue.put("trackId", track_id);
+  std::string jsonStr = jsonValue.stringify();
+
+  const std::string uri = "luna://com.webos.service.audio/unregisterTrack";
+  ResponseHandler nullcb = [] (const char *){};
+  return client ? client->CallAsync(uri.c_str(), jsonStr.c_str(), std::move(nullcb))
+                : false;
+}
+
+}  // namespace
+
+bool AbstractPlayer::RegisterTrack() {
+  std::string stream_type;
+
+  const size_t array_size = sizeof(pf::ElementFactory::streamtype) / sizeof(pf::ElementFactory::streamtype[0]);
+  if (display_path_ < array_size) {
+      stream_type = pf::ElementFactory::streamtype[display_path_];
+  } else {
+      GMP_DEBUG_PRINT("Error: display_path_ index out of bounds");
+  }
+
+  pbnjson::JValue jsonValue = pbnjson::Object();
+  jsonValue.put("streamType", stream_type);
+  std::string jsonStr = jsonValue.stringify();
+
+  const std::string uri = "luna://com.webos.service.audio/registerTrack";
+  // The reply comes from the main loop, maybe after an unload: by then the
+  // sink is gone. lsClient_ is a member, so no reply outlives the player.
+  ResponseHandler cb = [this, generation = ++track_generation_] (const char *s) {
+    pbnjson::JValue payload = pbnjson::JDomParser::fromString(s);
+    if (!payload["returnValue"].asBool() || !payload["trackId"].isString()) {
+      GMP_DEBUG_PRINT("registerTrack failed: %s", s);
+      return;
+    }
+    std::string track_id = payload["trackId"].asString();
+    if (generation != track_generation_) {
+      GMP_DEBUG_PRINT("registerTrack reply after unload, dropping %s",
+                      track_id.c_str());
+      SendUnregisterTrack(lsClient_.get(), track_id);
+      return;
+    }
+    track_id_ = track_id;
+
+    GstElement *sink = TrackAudioSink();
+    if (sink && g_object_class_find_property(G_OBJECT_GET_CLASS(sink),
+                                             "stream-properties")) {
+      GstStructure* structure = gst_structure_new("props", "application.name", G_TYPE_STRING, track_id_.c_str(), nullptr);
+      g_object_set(sink, "stream-properties", structure, nullptr);
+      gst_structure_free(structure);
+    }
+  };
+  return lsClient_ ? lsClient_->CallAsync(uri.c_str(), jsonStr.c_str(), std::move(cb))
+                   : false;
+}
+
+bool AbstractPlayer::UnRegisterTrack() {
+  ++track_generation_;
+  if (track_id_.empty())
+    return true;
+  bool ret = SendUnregisterTrack(lsClient_.get(), track_id_);
+  track_id_.clear();
+  return ret;
 }
 
 

@@ -17,6 +17,10 @@
 
 #include <cstdio>
 #include "wayland-client.h"
+
+// Stand-ins for the whole libwayland-client API: most of them ignore their
+// arguments by design.
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include "api_call_checker.h"
 
 struct wl_display {
@@ -173,6 +177,18 @@ int wl_display_dispatch(struct wl_display *display)
     _listener->global(_data, &_valid_registry, 0, "wl_webos_foreign", 0);
 
     return 1;
+}
+
+// Wayland::Foreign waits for the globals with a roundtrip: the same events.
+int wl_display_roundtrip(struct wl_display *display)
+{
+    callAPI("wl_display_roundtrip");
+    return wl_display_dispatch(display);
+}
+
+void wl_registry_destroy(struct wl_registry *wl_registry)
+{
+    callAPI("wl_registry_destroy");
 }
 
 void wl_webos_shell_destroy(struct wl_webos_shell *wl_webos_shell)

@@ -55,16 +55,16 @@ typedef struct {
     unsigned int height;
 } WaylandEGLSurface;
 
-static void handlePing(void *data, struct wl_shell_surface *shellSurface, uint32_t serial)
+static void handlePing(void * /*data*/, struct wl_shell_surface *shellSurface, uint32_t serial)
 {
     wl_shell_surface_pong(shellSurface, serial);
 }
 
-static void handleConfigure(void *data, struct wl_shell_surface *shellSurface, uint32_t edges, int32_t width, int32_t height)
+static void handleConfigure(void * /*data*/, struct wl_shell_surface * /*shellSurface*/, uint32_t /*edges*/, int32_t /*width*/, int32_t /*height*/)
 {
 }
 
-static void handlePopupDone(void *data, struct wl_shell_surface *shellSurface)
+static void handlePopupDone(void * /*data*/, struct wl_shell_surface * /*shellSurface*/)
 {
 }
 
@@ -235,7 +235,7 @@ bool renderInitialize(struct wl_display *display, EGLData *eglData, WaylandEGLSu
     return true;
 }
 
-bool rendering(GLData *glData, WaylandEGLSurface *surface)
+bool rendering(GLData *glData, WaylandEGLSurface * /*surface*/)
 {
     //Update
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);

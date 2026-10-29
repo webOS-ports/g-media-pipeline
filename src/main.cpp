@@ -18,6 +18,8 @@
 #include <service/service.h>
 #include <unistd.h>
 #include <string.h>
+#include <signal.h>
+#include <glib-unix.h>
 
 #define MAX_SERVICE_STRING 120
 
@@ -29,12 +31,12 @@ int main(int argc, char * argv[]) {
   while ((c = getopt(argc, argv, "s:")) != -1) {
     switch (c) {
       case 's':
-        snprintf(service_name, MAX_SERVICE_STRING, "%s", optarg);
+        snprintf(service_name, sizeof(service_name), "%s", optarg);
         service_name_specified = true;
         break;
 
       case '?':
-        GMP_DEBUG_PRINT("unknown service name");
+        GMP_DEBUG_PRINT("unknown option or missing service name");
         break;
 
       default:
@@ -47,6 +49,15 @@ int main(int argc, char * argv[]) {
 
   gmp::service::Service* service
     = gmp::service::Service::GetInstance(service_name);
+
+  // umediaserver ends a pipeline with SIGTERM: unload (audiod track, media
+  // resources) before the main loop ends.
+  auto shutdown = +[](gpointer data) -> gboolean {
+    static_cast<gmp::service::Service *>(data)->Shutdown();
+    return G_SOURCE_REMOVE;
+  };
+  g_unix_signal_add(SIGTERM, shutdown, service);
+  g_unix_signal_add(SIGINT, shutdown, service);
 
   service->Wait();
 

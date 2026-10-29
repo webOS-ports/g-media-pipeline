@@ -164,6 +164,8 @@ static bool processCommand(const std::string& cmd, gmp::test::StreamSource& sour
       break;
   }
 
+  if (!ret)
+    std::cout << std::string("Command failed!") << std::endl;
   return true;
 }
 

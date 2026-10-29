@@ -103,7 +103,7 @@ bool DummyService::Unload()
   }
 }
 
-void DummyService::Notify(const gint notification, const gint64 numValue, const gchar* strValue, void* payload)
+void DummyService::Notify(const gint notification, const gint64 /*numValue*/, const gchar* /*strValue*/, void* /*payload*/)
 {
   switch (notification) {
     case NOTIFY_LOAD_COMPLETED: {

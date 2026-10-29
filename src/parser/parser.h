@@ -21,7 +21,6 @@
 #include <pbnjson.hpp>
 #include <cstring>
 #include <string>
-#include <regex>
 #include <gst/gst.h>
 #include "log/log.h"
 
@@ -111,42 +110,12 @@ class Parser {
     return val;
   }
 
-  gint64 get_start_time(void) {
-    gint64 start_time = 0;
-//    for(auto i = _dom.children().begin(); i != _dom.children().end(); ++i) {
-    for(auto i : _dom.children()) {
-      _serialized = pbnjson::JGenerator::serialize(i.second, true);
-
-      try {
-        std::regex re("\\w+");
-        std::sregex_iterator next(_serialized.begin(), _serialized.end(), re);
-        std::sregex_iterator end;
-        while (next != end) {
-          std::smatch match = *next;
-          if (std::strcmp(match.str().c_str(), "start") == 0) {
-            ++next;
-            match = *next;
-            start_time = std::stoll(match.str().c_str(), nullptr, 10);
-            break;
-          }
-          ++next;
-        }
-      } catch (std::regex_error& e) {
-        GMP_DEBUG_PRINT("Syntax error in the regular expression");
-      } catch (const std::invalid_argument& ia) {
-        GMP_DEBUG_PRINT("Invalid argument for stoll");
-      }
-
-      if (start_time > 0)
-        break;
-    }
-
-    return start_time;
-  }
+  // The resume position umediaserver puts into a reload,
+  // option.transmission.playTime.start (ms); 0 when there is none.
+  gint64 get_start_time(void) const;
 
  private:
   pbnjson::JValue _dom;
-  std::string _serialized;
 };
 
 }  // namespace parser

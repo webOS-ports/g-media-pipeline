@@ -24,7 +24,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <gst/video/videooverlay.h>
-#include <gst/codecparsers/gsth264parse.h>
 #include "ElementFactory.h"
 
 #include "parser/parser.h"
@@ -85,9 +84,15 @@ bool UriPlayer::Load(const std::string &str) {
     bufferingTimer_id_ = g_timeout_add(UPDATE_INTERVAL_MS,
                                (GSourceFunc)NotifyBufferingTime, this);
 
-  SetPlayerState(base::playback_state_t::LOADED);
+  // A live source has already been put into PLAYING by LoadPipeline().
+  if (GetPlayerState() != base::playback_state_t::PLAYING)
+    SetPlayerState(base::playback_state_t::LOADED);
 
-  this->SetReloading(gmp::parser::Parser(str.c_str()).get_start_time());
+  try {
+    this->SetReloading(gmp::parser::Parser(str.c_str()).get_start_time());
+  } catch (const gmp::parser::parser_error &e) {
+    GMP_DEBUG_PRINT("no start time: %s", e.what());
+  }
 
   GMP_DEBUG_PRINT("Load Done: %s", uri_.c_str());
   return true;
@@ -96,8 +101,13 @@ bool UriPlayer::Load(const std::string &str) {
 bool UriPlayer::UnloadImpl() {
   GMP_DEBUG_PRINT("unload");
 
-  if (queue2_)
-    g_object_unref(queue2_);
+  if (busWatchId_) {
+    g_source_remove(busWatchId_);
+    busWatchId_ = 0;
+  }
+
+  g_clear_pointer(&queue2_, gst_object_unref);
+  aSink = nullptr;  // went with the pipeline
 
   if (bufferingTimer_id_) {
     g_source_remove(bufferingTimer_id_);
@@ -189,6 +199,12 @@ bool UriPlayer::SetPlayRate(const double rate) {
     return false;
   }
 
+  if (util::Util::CompareDouble(rate, 0.0)) {
+    GMP_DEBUG_PRINT("playRate 0 is not a valid seek rate");
+    return false;
+  }
+
+  const gdouble old_rate = play_rate_;
   play_rate_ = rate;
   seeking_ = true;
 
@@ -196,15 +212,16 @@ bool UriPlayer::SetPlayRate(const double rate) {
                   ", duration: %" G_GINT64_FORMAT,
                   rate, current_position_, duration_);
 
+  gboolean ok;
   if (rate > 0.0) {
-    return gst_element_seek(pipeline_, (gdouble)rate, GST_FORMAT_TIME,
+    ok = gst_element_seek(pipeline_, (gdouble)rate, GST_FORMAT_TIME,
                      GstSeekFlags(GST_SEEK_FLAG_FLUSH |
                                   GST_SEEK_FLAG_KEY_UNIT |
                                   GST_SEEK_FLAG_TRICKMODE),
                      GST_SEEK_TYPE_SET, current_position_, GST_SEEK_TYPE_SET, duration_);
   } else {
 // reverse playback might be unsupported with some demuxer(e.g. qtdemxer)
-    return gst_element_seek(pipeline_, (gdouble)rate, GST_FORMAT_TIME,
+    ok = gst_element_seek(pipeline_, (gdouble)rate, GST_FORMAT_TIME,
                      GstSeekFlags(GST_SEEK_FLAG_FLUSH |
                                   GST_SEEK_FLAG_KEY_UNIT |
                                   GST_SEEK_FLAG_TRICKMODE |
@@ -212,6 +229,13 @@ bool UriPlayer::SetPlayRate(const double rate) {
                                   GST_SEEK_FLAG_TRICKMODE_NO_AUDIO),
                      GST_SEEK_TYPE_SET, 0, GST_SEEK_TYPE_SET, current_position_);
   }
+
+  // No ASYNC_DONE follows a seek that was refused.
+  if (!ok) {
+    play_rate_ = old_rate;
+    seeking_ = false;
+  }
+  return ok;
 }
 
 bool UriPlayer::Seek(const int64_t msecond) {
@@ -223,11 +247,24 @@ bool UriPlayer::Seek(const int64_t msecond) {
     return false;
   }
 
+  // A target past the end makes an invalid segment (start > stop) in the
+  // demuxer/parser; go to the end instead, which ends the stream.
+  gint64 target = msecond * GST_MSECOND;
+  if (duration_ > 0 && target > duration_) {
+    GMP_INFO_PRINT("Seek: %" G_GINT64_FORMAT " ms is past the end, seeking to the end",
+                   msecond);
+    target = duration_;
+  }
+
   seeking_ = true;
-  return gst_element_seek(pipeline_, (gdouble)play_rate_, GST_FORMAT_TIME,
+  if (!gst_element_seek(pipeline_, (gdouble)play_rate_, GST_FORMAT_TIME,
                    GstSeekFlags(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT),
-                   GST_SEEK_TYPE_SET, msecond * GST_MSECOND,
-                   GST_SEEK_TYPE_NONE, 0);
+                   GST_SEEK_TYPE_SET, target,
+                   GST_SEEK_TYPE_NONE, 0)) {
+    seeking_ = false;
+    return false;
+  }
+  return true;
 }
 
 bool UriPlayer::SetVolume(int volume) {
@@ -342,7 +379,7 @@ void UriPlayer::NotifySourceInfo() {
     cbFunction_(NOTIFY_SOURCE_INFO, 0, nullptr, &source_info_);
 }
 
-gboolean UriPlayer::HandleBusMessage(GstBus *bus,
+gboolean UriPlayer::HandleBusMessage(GstBus * /*bus*/,
                                      GstMessage *message, gpointer user_data) {
   GstMessageType messageType = GST_MESSAGE_TYPE(message);
   if (messageType != GST_MESSAGE_QOS && messageType != GST_MESSAGE_TAG) {
@@ -387,22 +424,8 @@ gboolean UriPlayer::HandleBusMessage(GstBus *bus,
         }
       }
 
-      if (player->cbFunction_ || (notify_case == NOTIFY_LOAD_COMPLETED) || (notify_case == NOTIFY_SEEK_DONE))
+      if (player->cbFunction_ && notify_case != NOTIFY_MAX)
         player->cbFunction_(notify_case, 0, nullptr, nullptr);
-      break;
-    }
-
-    case GST_STATE_PAUSED: {
-      GMP_DEBUG_PRINT("PAUSED");
-      if (player->cbFunction_)
-        player->cbFunction_(NOTIFY_PAUSED, 0, nullptr, nullptr);
-      break;
-    }
-
-    case GST_STATE_PLAYING: {
-      GMP_DEBUG_PRINT("PLAYING");
-      if (player->cbFunction_)
-        player->cbFunction_(NOTIFY_PLAYING, 0, nullptr, nullptr);
       break;
     }
 
@@ -498,7 +521,7 @@ gboolean UriPlayer::HandleBusMessage(GstBus *bus,
   return true;
 }
 
-GstBusSyncReply UriPlayer::HandleSyncBusMessage(GstBus * bus,
+GstBusSyncReply UriPlayer::HandleSyncBusMessage(GstBus * /*bus*/,
                                                 GstMessage * msg, gpointer data)
 {
   // This handler will be invoked synchronously, don't process any application
@@ -518,6 +541,7 @@ GstBusSyncReply UriPlayer::HandleSyncBusMessage(GstBus * bus,
         gst_structure_set(gst_context_writable_structure (context),
             "handle", G_TYPE_POINTER, connector->getDisplay(), nullptr);
         gst_element_set_context(GST_ELEMENT(GST_MESSAGE_SRC(msg)), context);
+        gst_context_unref(context);
       }
       goto drop;
     }
@@ -559,7 +583,7 @@ drop:
 }
 
 /* Added for _DR_ resolution change event support */
-gboolean UriPlayer::SourceChangedData(GstElement* gstAppSrc, gint width, gint height, gint fps_num, gint fps_den,
+gboolean UriPlayer::SourceChangedData(GstElement* /*gstAppSrc*/, gint width, gint height, gint fps_num, gint fps_den,
                              gpointer userData) {
   UriPlayer *player = reinterpret_cast<UriPlayer *>(userData);
   gmp::base::video_info_t videoInfo;
@@ -599,7 +623,7 @@ bool UriPlayer::LoadPipeline() {
     return false;
   }
 
-  auto sourceSetupCB = +[] (GstElement *playbin, GstElement *source, UriPlayer *player) -> void {
+  auto sourceSetupCB = +[] (GstElement * /*playbin*/, GstElement *source, UriPlayer *player) -> void {
     GstElementFactory *factory = gst_element_get_factory(source);
     const gchar *name = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
     GMP_DEBUG_PRINT("Found [%s] element!", name);
@@ -609,19 +633,24 @@ bool UriPlayer::LoadPipeline() {
     }
   };
 
-  auto elementSetupCB = +[] (GstElement *playbin, GstElement *element, UriPlayer *player) -> void {
+  auto elementSetupCB = +[] (GstElement * /*playbin*/, GstElement *element, UriPlayer *player) -> void {
     gchar *name = gst_element_get_name(element);
     GMP_DEBUG_PRINT("[%s] element deployed!", name);
 
     if (g_strrstr(name, "queue2") != NULL) {
+      if (player->queue2_)
+        gst_object_unref(player->queue2_);
       player->queue2_ = GST_ELEMENT_CAST(gst_object_ref(element));
       GMP_INFO_PRINT("%s element set for the max_size_time property!", name);
       g_object_set(element, "max-size-bytes", player->queue2MaxSizeBytes,
                             "max-size-time", player->queue2MaxSizeTime, NULL);
     }
-    else if (g_strrstr(name, "h264parse") != NULL) {
-      g_signal_connect(reinterpret_cast<GstH264Parse*>(element),
-                   "source-changed", G_CALLBACK(SourceChangedData), player);
+    // "source-changed" comes from a webOS patch to h264parse; a stock
+    // GStreamer has no such signal.
+    else if (g_strrstr(name, "h264parse") != NULL &&
+             g_signal_lookup("source-changed", G_OBJECT_TYPE(element))) {
+      g_signal_connect(element, "source-changed",
+                       G_CALLBACK(SourceChangedData), player);
     }
     /* Added for _DR_ resolution change event support */
     g_free(name);
@@ -630,8 +659,11 @@ bool UriPlayer::LoadPipeline() {
   g_signal_connect(G_OBJECT(pipeline_), "source-setup", G_CALLBACK(sourceSetupCB), this);
   g_signal_connect(G_OBJECT(pipeline_), "element-setup", G_CALLBACK(elementSetupCB), this);
 
-  std::string aSinkName = (use_audio ? "audio-sink" : "fake-sink");
-  aSink = pf::ElementFactory::Create("playbin", aSinkName, display_path_);
+  // No gst_elements.conf has a "fake-sink" entry, and playbin has no
+  // "fake-sink" property: without audio, plug a fakesink as the audio sink.
+  aSink = use_audio
+      ? pf::ElementFactory::Create("playbin", "audio-sink", display_path_)
+      : gst_element_factory_make("fakesink", "audio-fakesink");
   if (!aSink ) {
     GMP_DEBUG_PRINT("ERROR : Cannot create audio sink element!");
     return false;
@@ -643,51 +675,55 @@ bool UriPlayer::LoadPipeline() {
   }
 
 
+  // An audio-only source has no video stream, and one whose size is
+  // not known yet has a width of 0: either would divide by zero.
+  if (!source_info_.video_streams.empty() &&
+      source_info_.video_streams[0].width > 0) {
+    gint scale_width = VIDEO_SCALE_WIDTH;
+    gint scale_height = (source_info_.video_streams[0].height * scale_width) /
+                       source_info_.video_streams[0].width;
+    lsm_connector_.setVideoSize(scale_width, scale_height);
+  }
+
+  // Prefer convert ! capsfilter(RGB16) ! sink in a bin; fall back to the
+  // bare video sink when any part of that bin cannot be made.
   GstElement *vSink = nullptr;
   GstElement *videoConvert =
         pf::ElementFactory::Create("playbin", "video-converter");
-  if (videoConvert) {
-    vSink = gst_bin_new("video-sink-bin");
-    GstElement *videoSink =
+  GstElement *capsFilter =
+        gst_element_factory_make("capsfilter", "video-caps-filter");
+  GstElement *videoSink =
         pf::ElementFactory::Create("playbin", "video-sink");
-    if (vSink && videoSink) {
-      GstElement *capsFilter =
-          gst_element_factory_make("capsfilter", "video-caps-filter");
-      if (capsFilter) {
-        GstCaps *videoCaps = gst_caps_new_simple (
-            "video/x-raw", "format", G_TYPE_STRING, "RGB16", NULL);
-        if (videoCaps)
-          g_object_set(G_OBJECT(capsFilter), "caps", videoCaps, NULL);
-      } else {
-        GMP_DEBUG_PRINT("ERROR : Cannot create video sink element!");
-        gst_object_unref (GST_OBJECT (vSink));
-        gst_object_unref (GST_OBJECT (videoSink));
-        return false;
-      }
+  if (videoConvert && capsFilter && videoSink) {
+    GstCaps *videoCaps = gst_caps_new_simple (
+        "video/x-raw", "format", G_TYPE_STRING, "RGB16", NULL);
+    g_object_set(G_OBJECT(capsFilter), "caps", videoCaps, NULL);
+    gst_caps_unref(videoCaps);
 
-      gint scale_width = VIDEO_SCALE_WIDTH;
-      gint scale_height = (source_info_.video_streams[0].height * scale_width) /
-                         source_info_.video_streams[0].width;
-      lsm_connector_.setVideoSize(scale_width, scale_height);
-
-      gst_bin_add_many(GST_BIN(vSink), videoConvert, capsFilter, videoSink, NULL);
-      if (!gst_element_link_many(videoConvert, capsFilter, videoSink, NULL)) {
-        GMP_DEBUG_PRINT("video-sink-bin elements link failed!!!");
-        return false;
-      }
-
-      GstPad *pad = gst_element_get_static_pad(videoConvert, "sink");
-      GstPad *ghostPad = gst_ghost_pad_new("sink", pad);
-      gst_pad_set_active(ghostPad, TRUE);
-      gst_element_add_pad(vSink, ghostPad);
-      gst_object_unref(pad);
-    } else {
-      GMP_DEBUG_PRINT("vSink (%p), videoSink(%p) failed", vSink, videoSink);
+    vSink = gst_bin_new("video-sink-bin");
+    // The bin takes the three elements, so they go with it from here on.
+    gst_bin_add_many(GST_BIN(vSink), videoConvert, capsFilter, videoSink, NULL);
+    if (!gst_element_link_many(videoConvert, capsFilter, videoSink, NULL)) {
+      GMP_DEBUG_PRINT("video-sink-bin elements link failed!!!");
+      gst_object_unref(vSink);
+      gst_object_unref(aSink);
+      return false;
     }
-  }
 
-  if (!vSink)
-    vSink = pf::ElementFactory::Create("playbin", "video-sink");
+    GstPad *pad = gst_element_get_static_pad(videoConvert, "sink");
+    GstPad *ghostPad = gst_ghost_pad_new("sink", pad);
+    gst_pad_set_active(ghostPad, TRUE);
+    gst_element_add_pad(vSink, ghostPad);
+    gst_object_unref(pad);
+  } else {
+    GMP_DEBUG_PRINT("video-converter (%p), capsfilter (%p): using the bare video sink",
+                    videoConvert, capsFilter);
+    if (videoConvert)
+      gst_object_unref(videoConvert);
+    if (capsFilter)
+      gst_object_unref(capsFilter);
+    vSink = videoSink;
+  }
 
   if (!vSink) {
     GMP_DEBUG_PRINT("ERROR : Cannot create video sink element!");
@@ -697,10 +733,10 @@ bool UriPlayer::LoadPipeline() {
 
   g_object_set(G_OBJECT(pipeline_), "uri", uri_.c_str(),
                                     "video-sink", vSink,
-                                    aSinkName.c_str(), aSink, NULL);
+                                    "audio-sink", aSink, NULL);
 
   GstBus *bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline_));
-  gst_bus_add_watch(bus, UriPlayer::HandleBusMessage, this);
+  busWatchId_ = gst_bus_add_watch(bus, UriPlayer::HandleBusMessage, this);
   gst_bus_set_sync_handler(bus, UriPlayer::HandleSyncBusMessage,
                            &lsm_connector_, NULL);
 
@@ -835,7 +871,7 @@ base::error_t UriPlayer::HandleErrorMessage(GstMessage *message) {
 
   base::error_t error;
   error.errorCode = ConvertErrorCode(domain, (gint)err->code);
-  error.errorText = g_strdup(err->message);
+  error.errorText = err->message;
 
   GMP_DEBUG_PRINT("[GST_MESSAGE_ERROR][domain:%s][from:%s][code:%d][converted:%d][msg:%s]",
                    g_quark_to_string(domain), (GST_OBJECT_NAME(GST_MESSAGE_SRC(message))),
@@ -892,48 +928,6 @@ int32_t UriPlayer::ConvertErrorCode(GQuark domain, gint code) {
   }
 
   return converted;
-}
-
-bool UriPlayer::RegisterTrack(){
-  std::string stream_type;
-
-  const size_t array_size = sizeof(pf::ElementFactory::streamtype) / sizeof(pf::ElementFactory::streamtype[0]);
-  if (display_path_ < array_size) {
-      stream_type = pf::ElementFactory::streamtype[display_path_];
-  } else {
-      GMP_DEBUG_PRINT("Error: display_path_ index out of bounds");
-  }
-
-  pbnjson::JValue jsonValue = pbnjson::Object();
-  jsonValue.put("streamType", stream_type);
-  std::string jsonStr = jsonValue.stringify();
-
-  const std::string uri = "luna://com.webos.service.audio/registerTrack";
-  ResponseHandler nullcb = [this] (const char *s){
-    pbnjson::JValue payload = pbnjson::JDomParser::fromString(s);
-    bool returnValue = payload["returnValue"].asBool();
-    this->track_id_ = payload["trackId"].asString();
-
-    GstStructure* structure = gst_structure_new("props", "application.name", G_TYPE_STRING, track_id_.c_str(), nullptr);
-    g_object_set(this->aSink, "stream-properties", structure, nullptr);
-    gst_structure_free(structure);
-  };
-  bool ret = (lsClient_) ? lsClient_->CallAsync(uri.c_str(), jsonStr.c_str(), std::move(nullcb))
-                         : false;
-  return ret;
-}
-
-bool UriPlayer::UnRegisterTrack(){
-  pbnjson::JValue jsonValue = pbnjson::Object();
-
-  jsonValue.put("trackId", track_id_);
-  std::string jsonStr = jsonValue.stringify();
-
-  const std::string uri = "luna://com.webos.service.audio/unregisterTrack";
-  ResponseHandler nullcb = [] (const char *){};
-  bool ret = (lsClient_) ? lsClient_->CallAsync(uri.c_str(), jsonStr.c_str(),std::move(nullcb))
-                         : false;
-  return ret;
 }
 
 void UriPlayer::ParseOptionString(const std::string &str) {

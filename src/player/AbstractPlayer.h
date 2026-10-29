@@ -66,11 +66,20 @@ class AbstractPlayer : public Player {
   bool attachSurface(bool allow_no_window = false);
   bool detachSurface();
 
+  // audiod track of this player. The registerTrack reply sets track_id_
+  // and the stream properties of TrackAudioSink().
+  bool RegisterTrack();
+  bool UnRegisterTrack();
+  virtual GstElement *TrackAudioSink() const { return nullptr; }
+
   GstElement *pipeline_ = nullptr;
 
   base::source_info_t source_info_;
   uint32_t display_path_ = DEFAULT_DISPLAY;
   std::string track_id_;
+  // Bumped by every RegisterTrack() and UnRegisterTrack(): a registerTrack
+  // reply from an older one is for a track nobody wants any more.
+  guint track_generation_ = 0;
 
   double play_rate_ = 1.0;
   gint64 duration_ = 0;

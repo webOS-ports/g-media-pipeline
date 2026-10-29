@@ -16,14 +16,15 @@
 
 set(LSM_CONNECTOR_LIB lsm-connector)
 
+include(FindPkgConfig)
+# webos_test_provider() in tests/ comes from here: include it first.
+include(webOS/webOS)
+
 if (WEBOS_CONFIG_BUILD_TESTS)
     add_subdirectory(tests)
 else()
   message(STATUS "Skipping Unit Test")
 endif()
-
-include(FindPkgConfig)
-include(webOS/webOS)
 
 pkg_check_modules(WAYLAND_CLIENT REQUIRED wayland-client)
 webos_add_compiler_flags(ALL ${WAYLAND_CLIENT_CFLAGS})
@@ -36,7 +37,7 @@ if (PMLOGLIB_FOUND)
   set(PMLOG_LIBRARIES PmLogLib)
 endif (PMLOGLIB_FOUND)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -std=gnu99 -Wall -fPIE")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -std=gnu99 -fPIE")
 
 include_directories(include)
 include_directories(src)
@@ -59,5 +60,8 @@ target_link_libraries(${LSM_CONNECTOR_LIB}
 
 install(TARGETS ${LSM_CONNECTOR_LIB} DESTINATION lib)
 
-add_subdirectory(tool)
+# lsm_connector_exporter/importer are test tools, not part of the pipeline.
+if (WEBOS_CONFIG_BUILD_TESTS)
+  add_subdirectory(tool)
+endif()
 

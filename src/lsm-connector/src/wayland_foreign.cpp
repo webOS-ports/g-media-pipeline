@@ -25,7 +25,11 @@ static void display_handle_global(void *waylandData, struct wl_registry *registr
     auto foreign = (Wayland::Foreign *)waylandData;
 
     if (strcmp(interface, "wl_compositor") == 0) {
-        foreign->setCompositor((struct wl_compositor *)wl_registry_bind(registry, id, &wl_compositor_interface, 4));
+        // Version 4 at most, and never more than the compositor offers:
+        // binding a higher version than advertised is a protocol error.
+        uint32_t bindVersion = version < 4 ? version : 4;
+        foreign->setCompositor(
+            (struct wl_compositor *)wl_registry_bind(registry, id, &wl_compositor_interface, bindVersion));
     } else if (strcmp(interface, "wl_shell") == 0) {
         foreign->setShell((struct wl_shell *)wl_registry_bind(registry, id, &wl_shell_interface, 1));
     } else if (strcmp(interface, "wl_webos_shell") == 0) {
@@ -36,7 +40,12 @@ static void display_handle_global(void *waylandData, struct wl_registry *registr
     }
 }
 
-static const struct wl_registry_listener registryListener = {display_handle_global};
+static void display_handle_global_remove(void * /*waylandData*/, struct wl_registry * /*registry*/,
+                                         uint32_t /*name*/)
+{
+}
+
+static const struct wl_registry_listener registryListener = {display_handle_global, display_handle_global_remove};
 
 namespace Wayland
 {
@@ -63,26 +72,39 @@ bool Foreign::initialize(void)
 
     wl_registry_add_listener(registry, &registryListener, this);
 
-    wl_display_dispatch(display);
+    // A roundtrip, not one dispatch: the globals need not all arrive in the
+    // first read from the socket.
+    if (wl_display_roundtrip(display) < 0)
+        return false;
 
-    return true;
+    return compositor != nullptr && webosForeign != nullptr;
 }
 
 void Foreign::finalize(void)
 {
+    // Cleared as they go, so that a second initialize() that does not get
+    // every global back cannot leave a destroyed proxy to be destroyed again.
     if (webosForeign)
         wl_webos_foreign_destroy(webosForeign);
+    webosForeign = nullptr;
     if (webosShell)
         wl_webos_shell_destroy(webosShell);
+    webosShell = nullptr;
     if (shell)
         wl_shell_destroy(shell);
+    shell = nullptr;
     if (compositor)
         wl_compositor_destroy(compositor);
+    compositor = nullptr;
+    if (registry)
+        wl_registry_destroy(registry);
+    registry = nullptr;
 
     if (display) {
         wl_display_flush(display);
         wl_display_disconnect(display);
     }
+    display = nullptr;
 }
 
 void Foreign::setCompositor(struct wl_compositor *compositor) { this->compositor = compositor; }
@@ -105,6 +127,8 @@ struct wl_webos_foreign *Foreign::getWebosForeign(void) { return webosForeign; }
 
 struct wl_region *Foreign::createRegion(int32_t x, int32_t y, int32_t width, int32_t height)
 {
+    if (!compositor)
+        return nullptr;
     struct wl_region *region = wl_compositor_create_region(compositor);
     wl_region_add(region, x, y, width, height);
 
@@ -113,6 +137,7 @@ struct wl_region *Foreign::createRegion(int32_t x, int32_t y, int32_t width, int
 
 void Foreign::destroyRegion(struct wl_region *region) { wl_region_destroy(region); }
 
-bool Foreign::flush(void) { return wl_display_flush(display); }
+// wl_display_flush() returns the bytes sent, or -1 on error.
+bool Foreign::flush(void) { return display && wl_display_flush(display) >= 0; }
 
 } // namespace Wayland

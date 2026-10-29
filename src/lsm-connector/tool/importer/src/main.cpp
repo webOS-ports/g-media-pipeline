@@ -293,7 +293,7 @@ static gboolean intr_handler(gpointer user_data)
   return G_SOURCE_REMOVE;
 }
 
-gboolean handleBusCallback (GstBus * bus,
+gboolean handleBusCallback (GstBus * /*bus*/,
                                              GstMessage * msg,
                                              gpointer data)
 {
@@ -327,7 +327,7 @@ gboolean handleBusCallback (GstBus * bus,
   return TRUE;
 }
 
-GstBusSyncReply handleSyncBusCallback(GstBus * bus,
+GstBusSyncReply handleSyncBusCallback(GstBus * /*bus*/,
                                                        GstMessage * msg,
                                                        gpointer data)
 {
@@ -394,7 +394,6 @@ static void pad_added_handler (GstElement *src, GstPad *new_pad, GstElement *sin
 	else
 		std::cout << "type : '" << new_pad_type << "', is ignored" << std::endl;
 
-exit:
     if (new_pad_caps != NULL) {
 	    gst_caps_unref (new_pad_caps);
 	    gst_object_unref (sink_pad);
@@ -409,6 +408,7 @@ bool testSurfaceWithGST(LSM::Connector &connector, int display_mode)
 
 	bool usePlaybin = true;
 	bool result = false;
+	bool played = false;
 
     result = connector.attachSurface();
 
@@ -499,7 +499,9 @@ bool testSurfaceWithGST(LSM::Connector &connector, int display_mode)
 	result = gst_element_set_state(pipeline, GST_STATE_PLAYING);
 	if (result == GST_STATE_CHANGE_FAILURE) {
 		std::cout <<  "Unable to set the pipeline to the playing state" << std::endl;
-		return exit;
+		// was "return exit;": the address of exit() as a bool, so true, and
+		// no clean-up
+		goto exit;
 	}
 
 	loop = g_main_loop_new (NULL, FALSE);
@@ -508,6 +510,7 @@ bool testSurfaceWithGST(LSM::Connector &connector, int display_mode)
         g_unix_signal_add (SIGINT, (GSourceFunc) intr_handler, loop);
 
     g_main_loop_run (loop);
+    played = true;
 
 exit:
 	gst_element_set_state(pipeline, GST_STATE_NULL);
@@ -516,7 +519,8 @@ exit:
     if (signal_watch_intr_id > 0)
         g_source_remove (signal_watch_intr_id);
 
-    g_main_loop_unref(loop);
+    if (loop)
+        g_main_loop_unref(loop);
     result = connector.detachSurface();
 
     if (!result) {
@@ -524,7 +528,7 @@ exit:
         return false;
     }
 
-    return result;
+    return played;
 }
 
 

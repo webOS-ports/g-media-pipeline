@@ -17,8 +17,8 @@
 
 #include "wayland_exporter.h"
 
-void handlerWindowIDAssigned(void *data, struct wl_webos_exported *wlWebosExported, const char *windowID,
-                             uint32_t exportedType)
+void handlerWindowIDAssigned(void *data, struct wl_webos_exported * /*wlWebosExported*/, const char *windowID,
+                             uint32_t /*exportedType*/)
 {
     auto exporter = (Wayland::Exporter *)data;
     exporter->setWindowID(windowID);
