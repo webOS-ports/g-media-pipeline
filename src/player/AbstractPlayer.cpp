@@ -130,9 +130,11 @@ void AbstractPlayer::SetGstreamerDebug() {
   pbnjson::JValue parsed
     = pbnjson::JDomParser::fromFile("/etc/g-media-pipeline/gst_debug.conf");
 
+  // Only GStreamer debug settings: without them, play on (the assert
+  // aborted every player, as NDEBUG is not defined).
   if (!parsed.isObject()) {
-    GMP_DEBUG_PRINT("Debug file parsing error. Please check gst_debug.conf");
-    GMPASSERT(0);
+    GMP_INFO_PRINT("Debug file parsing error. Please check gst_debug.conf");
+    return;
   }
 
   pbnjson::JValue debug = parsed["gst_debug"];
