@@ -15,7 +15,6 @@
 
 // SPDX-License-Identifier: Apache-2.0
 
-#include <cstring>
 #include "DSIGeneratorAAC.h"
 #include "log/log.h"
 
@@ -24,132 +23,110 @@ namespace gmp { namespace dsi {
 DSIGeneratorAAC::DSIGeneratorAAC(const MEDIA_LOAD_DATA_T* loadData)
     : channels_(0),
       audioObjectType_(0),
-      sampleRate_(0),
-      audioCodecData_(NULL),
-      audioCodecDataSize_(0)
+      sampleRate_(0)
 {
     if (loadData) {
         channels_ = loadData->channels;
         audioObjectType_ = loadData->audioObjectType;
         sampleRate_ = loadData->sampleRate;
-        audioCodecData_ = loadData->codecData;
-        audioCodecDataSize_ = loadData->codecDataSize;
+        if (loadData->codecData && loadData->codecDataSize > 0)
+            audioCodecData_.assign(loadData->codecData,
+                                   loadData->codecData + loadData->codecDataSize);
     }
 }
 
-DSIGeneratorAAC::~DSIGeneratorAAC() {
-  if (audioCodecData_) {
-    delete[] audioCodecData_;
-    audioCodecData_ = NULL;
-  }
-}
+DSIGeneratorAAC::~DSIGeneratorAAC() = default;
 
 GstCaps* DSIGeneratorAAC::GenerateSpecificInfo()
 {
     GMP_DEBUG_PRINT("");
-    guint8 audioObjectTypeExt = 0;
-    guint8 codec_data[6] = {0, };
-    caps_ = gst_caps_new_simple("audio/mpeg", "mpegversion", G_TYPE_INT, 4, NULL);
-    if (caps_ == NULL) {
+    GstCaps *caps = gst_caps_new_simple("audio/mpeg", "mpegversion", G_TYPE_INT, 4, NULL);
+    if (caps == NULL) {
         GMP_INFO_PRINT("caps is NULL! DSI generation fails!");
         return NULL;
     }
 
     // in case of received decoding specific information from application.
     // if audioCodecData doesn't initialized from application, playback is not working.
-    if (audioCodecData_ != NULL && audioCodecDataSize_ > 0) {
-        bool ret = SetGstCodecData();
-        if (ret) {
-            GMP_DEBUG_PRINT("DSI generation success!");
-            return caps_;
+    if (audioCodecData_.empty()) {
+        // AudioSpecificConfig (ISO/IEC 14496-3 1.6.2.1), MSB first:
+        // audioObjectType 5 bits (31: 6 more bits of extension),
+        // samplingFrequencyIndex 4 bits (15: 24 more bits of frequency),
+        // channelConfiguration 4 bits.
+        const guint8 audioObjectTypeExt = 0;
+        guint8 codec_data[6] = {0, };
+        guint8 size = 0;
+        guint8 frequencyIdx = GetFrequencyIndex(sampleRate_);
+
+        codec_data[0] = (audioObjectType_ & 0x1F) << 3;
+        if (audioObjectType_ == 31) {
+            // bits 5-10 extension, 11-14 frequency index
+            codec_data[0] |= (audioObjectTypeExt & 0x38) >> 3;
+            codec_data[1] = (audioObjectTypeExt & 0x07) << 5;
+            codec_data[1] |= (frequencyIdx & 0x0F) << 1;
+
+            if (frequencyIdx == 15) {
+                // bits 15-38 frequency, 39-42 channels
+                codec_data[1] |= (sampleRate_ & 0x800000) >> 23;
+                codec_data[2] = (sampleRate_ & 0x7F8000) >> 15;
+                codec_data[3] = (sampleRate_ & 0x007F80) >> 7;
+                codec_data[4] = (sampleRate_ & 0x00007F) << 1;
+                codec_data[4] |= (channels_ & 0x08) >> 3;
+                codec_data[5] = (channels_ & 0x07) << 5;
+                size = 6;
+            } else {
+                // bits 15-18 channels
+                codec_data[1] |= (channels_ & 0x08) >> 3;
+                codec_data[2] = (channels_ & 0x07) << 5;
+                size = 3;
+            }
         } else {
-            GMP_INFO_PRINT("SetGstCodecData fails!");
-            gst_caps_unref(caps_);
-            return NULL;
+            // bits 5-8 frequency index
+            codec_data[0] |= (frequencyIdx & 0x0E) >> 1;
+            codec_data[1] = (frequencyIdx & 0x01) << 7;
+
+            if (frequencyIdx == 15) {
+                // bits 9-32 frequency, 33-36 channels
+                codec_data[1] |= (sampleRate_ & 0xFE0000) >> 17;
+                codec_data[2] = (sampleRate_ & 0x01FE00) >> 9;
+                codec_data[3] = (sampleRate_ & 0x0001FE) >> 1;
+                codec_data[4] = (sampleRate_ & 0x000001) << 7;
+                codec_data[4] |= (channels_ & 0x0F) << 3;
+                size = 5;
+            } else {
+                // bits 9-12 channels
+                codec_data[1] |= (channels_ & 0x0F) << 3;
+                size = 2;
+            }
         }
+
+        if ((codec_data[0] == 0x00) && (codec_data[1] == 0x00)) {
+            GMP_INFO_PRINT("DSI generation success!");
+            return caps;
+        }
+        audioCodecData_.assign(codec_data, codec_data + size);
     }
 
-    guint8 frequencyIdx = GetFrequencyIndex(sampleRate_);
-
-    codec_data[0] = (audioObjectType_ & 0x1F) << 3;
-    if (audioObjectType_ == 31) {
-        //set audioObjectTypeExt 6bit(case of audioObjectType : 31)
-        codec_data[0] |= (audioObjectTypeExt & 0x38) >> 3;
-        codec_data[1] = (audioObjectTypeExt & 0x07) << 5;
-
-        //set frequencyIdx 4bit(frequency index)
-        codec_data[1] |= (frequencyIdx & 0x0F) << 1;
-
-        if(frequencyIdx == 15) {
-            //set frequency 24bit(case of frequency index : 15(0xF))
-            codec_data[1] |= (sampleRate_ & 0x800000) >> 23; // 1 bit
-            codec_data[2] = (sampleRate_ & 0x7F8000) >> 15;  // 8 bit
-            codec_data[3] = (sampleRate_ & 0x7F80) >> 7;     // 8 bit
-            codec_data[4] = (sampleRate_ & 0x7F);            // 7 bit (total 24 bit)
-
-            //set channels 4bit
-            codec_data[4] |= (channels_ & 0x08) << 3;
-            codec_data[5] = (channels_ & 0x07) << 5;
-        }
-        else {
-            //set channels 4bit
-            codec_data[1] |= (channels_ & 0x08);
-            codec_data[2] = (channels_ & 0x07) << 5;
-        }
-    } else {
-        //set freqIdx 4bit(frequency index)
-        codec_data[0] |= (frequencyIdx & 0x0E) >> 1;
-        codec_data[1] = (frequencyIdx & 0x01) << 7;
-
-        if(frequencyIdx == 15) {
-            //set frequency 24bit(case of frequency index : 15(0xF))
-            codec_data[1] |= (sampleRate_ & 0xFE0000) >> 17; // 7bit
-            codec_data[2] = (sampleRate_ & 0x01FE00) >> 9;   // 8 bit
-            codec_data[3] = (sampleRate_ & 0x01FE) >> 1;     // 8 bit
-            codec_data[4] = (sampleRate_ & 0x01);            // 1 bit (total 24 bit)
-
-            //set channels 4bit
-            codec_data[4] |= (channels_ & 0x0F) << 3;
-        }
-        else {
-            //set channels 4bit
-            codec_data[1] |= (channels_ & 0x0F) << 3;
-        }
-    }
-
-    if ((codec_data[0] != 0x00) || (codec_data[1] != 0x00)) {
-        audioCodecData_ = new guint8[sizeof(codec_data)];
-        std::memcpy(audioCodecData_, codec_data, sizeof(codec_data));
-        audioCodecDataSize_ = sizeof(codec_data);
-
-        bool ret = SetGstCodecData();
-        if (!ret) {
-            GMP_INFO_PRINT("SetGstCodecData fails!");
-            gst_caps_unref(caps_);
-            delete[] audioCodecData_;
-            audioCodecData_ = NULL;
-            return NULL;
-        }
+    if (!SetGstCodecData(caps)) {
+        GMP_INFO_PRINT("SetGstCodecData fails!");
+        gst_caps_unref(caps);
+        return NULL;
     }
 
     GMP_INFO_PRINT("DSI generation success!");
-    return caps_;
+    return caps;
 }
 
-bool DSIGeneratorAAC::SetGstCodecData()
+bool DSIGeneratorAAC::SetGstCodecData(GstCaps *caps) const
 {
-    GstMapInfo info;
-
-    codec_buf_ = gst_buffer_new_and_alloc(audioCodecDataSize_);
-    if (codec_buf_ == NULL) {
-        GMP_INFO_PRINT("gst_buffer_new_and_alloc fails!");
+    GstBuffer *codec_buf = gst_buffer_new_memdup(audioCodecData_.data(),
+                                                 audioCodecData_.size());
+    if (codec_buf == NULL) {
+        GMP_INFO_PRINT("gst_buffer_new_memdup fails!");
         return false;
     }
-    gst_buffer_map(codec_buf_, &info, GST_MAP_READ);
-    memcpy(info.data, audioCodecData_, audioCodecDataSize_);
-    gst_buffer_unmap(codec_buf_, &info);
-    gst_caps_set_simple(caps_, "codec_data", GST_TYPE_BUFFER, codec_buf_, NULL);
-    gst_buffer_unref(codec_buf_);
+    gst_caps_set_simple(caps, "codec_data", GST_TYPE_BUFFER, codec_buf, NULL);
+    gst_buffer_unref(codec_buf);
 
     return true;
 }
