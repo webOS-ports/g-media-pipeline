@@ -22,15 +22,21 @@
 #include <glib.h>
 
 #include <map>
+#include <memory>
 #include <thread>
 #include <functional>
 
 namespace gmp {
 typedef std::function<void (const char *)> ResponseHandler;
+class LunaServiceClient;
     struct ResponseHandlerWrapper {
           ResponseHandler handler;
+          LunaServiceClient *owner = nullptr;
           explicit ResponseHandlerWrapper(ResponseHandler rh) : handler(std::move(rh)) { }
     };
+
+bool handleAsync(LSHandle *sh, LSMessage *reply, void *ctx);
+bool handleSubscribe(LSHandle *sh, LSMessage *reply, void *ctx);
 
 class LunaServiceClient {
 public:
@@ -46,10 +52,19 @@ public:
                   ResponseHandler handler);
    bool unsubscribe(unsigned long subscribeKey);
 
+   LunaServiceClient(const LunaServiceClient &) = delete;
+   LunaServiceClient &operator=(const LunaServiceClient &) = delete;
+
 private:
+  friend bool handleAsync(LSHandle *sh, LSMessage *reply, void *ctx);
+  friend bool handleSubscribe(LSHandle *sh, LSMessage *reply, void *ctx);
+  static void RunHandler(const ResponseHandler &handler, LSMessage *reply);
+
   LSHandle* handle;
   GMainContext* context;
   std::map<unsigned long, std::unique_ptr<ResponseHandlerWrapper>> handlers;
+  // CallAsync() calls still waiting for their reply.
+  std::map<ResponseHandlerWrapper *, std::unique_ptr<ResponseHandlerWrapper>> pending;
 };//LunaServiceClient
 
 } //gmp
