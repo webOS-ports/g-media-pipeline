@@ -17,6 +17,10 @@
 
 #include <cstdio>
 #include "wayland-client.h"
+
+// Stand-ins for the whole libwayland-client API: most of them ignore their
+// arguments by design.
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include "api_call_checker.h"
 
 struct wl_display {

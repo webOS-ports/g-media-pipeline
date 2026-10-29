@@ -409,6 +409,7 @@ bool testSurfaceWithGST(LSM::Connector &connector, int display_mode)
 
 	bool usePlaybin = true;
 	bool result = false;
+	bool played = false;
 
     result = connector.attachSurface();
 
@@ -499,7 +500,9 @@ bool testSurfaceWithGST(LSM::Connector &connector, int display_mode)
 	result = gst_element_set_state(pipeline, GST_STATE_PLAYING);
 	if (result == GST_STATE_CHANGE_FAILURE) {
 		std::cout <<  "Unable to set the pipeline to the playing state" << std::endl;
-		return exit;
+		// was "return exit;": the address of exit() as a bool, so true, and
+		// no clean-up
+		goto exit;
 	}
 
 	loop = g_main_loop_new (NULL, FALSE);
@@ -508,6 +511,7 @@ bool testSurfaceWithGST(LSM::Connector &connector, int display_mode)
         g_unix_signal_add (SIGINT, (GSourceFunc) intr_handler, loop);
 
     g_main_loop_run (loop);
+    played = true;
 
 exit:
 	gst_element_set_state(pipeline, GST_STATE_NULL);
@@ -516,7 +520,8 @@ exit:
     if (signal_watch_intr_id > 0)
         g_source_remove (signal_watch_intr_id);
 
-    g_main_loop_unref(loop);
+    if (loop)
+        g_main_loop_unref(loop);
     result = connector.detachSurface();
 
     if (!result) {
@@ -524,7 +529,7 @@ exit:
         return false;
     }
 
-    return result;
+    return played;
 }
 
 

@@ -21,7 +21,7 @@
 #include <cstring>
 
 static void display_handle_global(void *waylandData, struct wl_registry *registry, uint32_t id, const char *interface,
-                                  uint32_t version)
+                                  uint32_t /*version*/)
 {
     auto foreign = (Wayland::Foreign *)waylandData;
 
@@ -37,7 +37,7 @@ static void display_handle_global(void *waylandData, struct wl_registry *registr
     }
 }
 
-static const struct wl_registry_listener registryListener = {display_handle_global};
+static const struct wl_registry_listener registryListener = {display_handle_global, nullptr};
 
 namespace Wayland
 {

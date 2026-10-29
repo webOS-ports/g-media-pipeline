@@ -16,14 +16,15 @@
 
 set(LSM_CONNECTOR_LIB lsm-connector)
 
+include(FindPkgConfig)
+# webos_test_provider() in tests/ comes from here: include it first.
+include(webOS/webOS)
+
 if (WEBOS_CONFIG_BUILD_TESTS)
     add_subdirectory(tests)
 else()
   message(STATUS "Skipping Unit Test")
 endif()
-
-include(FindPkgConfig)
-include(webOS/webOS)
 
 pkg_check_modules(WAYLAND_CLIENT REQUIRED wayland-client)
 webos_add_compiler_flags(ALL ${WAYLAND_CLIENT_CFLAGS})
