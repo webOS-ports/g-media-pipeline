@@ -135,15 +135,15 @@ target_link_libraries(gmp-player ${G-MEDIA-PIPELINE_LIB}
     lsm-connector
     )
 
-if(${WEBOS_TARGET_MACHINE} STREQUAL "raspberrypi3" OR ${WEBOS_TARGET_MACHINE} STREQUAL "raspberrypi3-64")
+if("${WEBOS_TARGET_MACHINE}" STREQUAL "raspberrypi3" OR "${WEBOS_TARGET_MACHINE}" STREQUAL "raspberrypi3-64")
   message(STATUS "Using config & debug file for raspberrypi3")
   install(FILES ./raspberrypi3/gst_debug.conf DESTINATION /etc/g-media-pipeline)
   install(FILES ./raspberrypi3/gst_elements.conf DESTINATION /etc/g-media-pipeline)
-elseif(${WEBOS_TARGET_MACHINE} STREQUAL "raspberrypi4" OR ${WEBOS_TARGET_MACHINE} STREQUAL "raspberrypi4-64")
+elseif("${WEBOS_TARGET_MACHINE}" STREQUAL "raspberrypi4" OR "${WEBOS_TARGET_MACHINE}" STREQUAL "raspberrypi4-64")
   message(STATUS "Using config & debug file for raspberrypi4")
   install(FILES ./raspberrypi4/gst_debug.conf DESTINATION /etc/g-media-pipeline)
   install(FILES ./raspberrypi4/gst_elements.conf DESTINATION /etc/g-media-pipeline)
-elseif (${WEBOS_TARGET_MACHINE} STREQUAL "qemux86" OR ${WEBOS_TARGET_MACHINE} STREQUAL "qemux86-64")
+elseif ("${WEBOS_TARGET_MACHINE}" STREQUAL "qemux86" OR "${WEBOS_TARGET_MACHINE}" STREQUAL "qemux86-64")
   message(STATUS "Using config & debug file for qemux86")
   install(FILES ./qemux86/gst_debug.conf DESTINATION /etc/g-media-pipeline)
   install(FILES ./qemux86/gst_elements.conf DESTINATION /etc/g-media-pipeline)

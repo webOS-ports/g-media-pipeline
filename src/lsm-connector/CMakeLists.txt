@@ -36,7 +36,7 @@ if (PMLOGLIB_FOUND)
   set(PMLOG_LIBRARIES PmLogLib)
 endif (PMLOGLIB_FOUND)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -std=gnu99 -Wall -fPIE")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -std=gnu99 -fPIE")
 
 include_directories(include)
 include_directories(src)
@@ -59,5 +59,8 @@ target_link_libraries(${LSM_CONNECTOR_LIB}
 
 install(TARGETS ${LSM_CONNECTOR_LIB} DESTINATION lib)
 
-add_subdirectory(tool)
+# lsm_connector_exporter/importer are test tools, not part of the pipeline.
+if (WEBOS_CONFIG_BUILD_TESTS)
+  add_subdirectory(tool)
+endif()
 
