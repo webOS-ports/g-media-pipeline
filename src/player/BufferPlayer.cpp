@@ -112,6 +112,7 @@ bool BufferPlayer::UnloadImpl() {
   videoSrcInfo_.reset();
 
   loadData_.reset();
+  audioSink_ = nullptr;  // went with the pipeline
 
   if (!UnRegisterTrack()) {
     GMP_DEBUG_PRINT("UnRegisterTrack failed ");
@@ -1207,6 +1208,7 @@ void BufferPlayer::FreePipelineElements() {
     gst_object_unref(pipeline_);
     pipeline_ = NULL;
   }
+  audioSink_ = nullptr;
 }
 
 bool BufferPlayer::AddAndLinkElement(GstElement* new_element) {
@@ -1805,47 +1807,6 @@ void BufferPlayer::SetAppSrcProperties(MEDIA_SRC_T* pAppSrcInfo,
     GMP_DEBUG_PRINT("app src properties set for[ %s ]", srcReadName);
     g_free(srcReadName);
   }
-}
-
-bool BufferPlayer::RegisterTrack(){
-  std::string stream_type;
-
-  const size_t array_size = sizeof(pf::ElementFactory::streamtype) / sizeof(pf::ElementFactory::streamtype[0]);
-  if (display_path_ < array_size) {
-      stream_type = pf::ElementFactory::streamtype[display_path_];
-  } else {
-      GMP_DEBUG_PRINT("Error: display_path_ index out of bounds");
-  }
-
-  pbnjson::JValue jsonValue = pbnjson::Object();
-  jsonValue.put("streamType", stream_type);
-  std::string jsonStr = jsonValue.stringify();
-
-  const std::string uri = "luna://com.webos.service.audio/registerTrack";
-  ResponseHandler nullcb = [&] (const char *s){
-    pbnjson::JValue payload = pbnjson::JDomParser::fromString(s);
-    bool returnValue = payload["returnValue"].asBool();
-    track_id_ = payload["trackId"].asString();
-    GstStructure* structure = gst_structure_new("props", "application.name", G_TYPE_STRING, track_id_.c_str(), nullptr);
-    g_object_set(audioSink_, "stream-properties", structure, nullptr);
-    gst_structure_free(structure);
-  };
-  bool ret = (lsClient_) ? lsClient_->CallAsync(uri.c_str(), jsonStr.c_str(),std::move(nullcb))
-                         : false;
-  return ret;
-}
-
-bool BufferPlayer::UnRegisterTrack(){
-  pbnjson::JValue jsonValue = pbnjson::Object();
-
-  jsonValue.put("trackId", track_id_);
-  std::string jsonStr = jsonValue.stringify();
-
-  const std::string uri = "luna://com.webos.service.audio/unregisterTrack";
-  ResponseHandler nullcb = [] (const char *){};
-  bool ret = (lsClient_) ? lsClient_->CallAsync(uri.c_str(), jsonStr.c_str(),std::move(nullcb))
-                         : false;
-  return ret;
 }
 
 void BufferPlayer::SetDebugDumpFileName() {

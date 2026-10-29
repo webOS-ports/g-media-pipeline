@@ -42,8 +42,7 @@ class UriPlayer : public AbstractPlayer {
                              gpointer userData);
 
   /*for handling track volume*/
-  bool RegisterTrack();
-  bool UnRegisterTrack();
+  GstElement *TrackAudioSink() const override { return aSink; }
 
 
  protected:

@@ -103,6 +103,7 @@ bool UriPlayer::UnloadImpl() {
   }
 
   g_clear_pointer(&queue2_, gst_object_unref);
+  aSink = nullptr;  // went with the pipeline
 
   if (bufferingTimer_id_) {
     g_source_remove(bufferingTimer_id_);
@@ -914,48 +915,6 @@ int32_t UriPlayer::ConvertErrorCode(GQuark domain, gint code) {
   }
 
   return converted;
-}
-
-bool UriPlayer::RegisterTrack(){
-  std::string stream_type;
-
-  const size_t array_size = sizeof(pf::ElementFactory::streamtype) / sizeof(pf::ElementFactory::streamtype[0]);
-  if (display_path_ < array_size) {
-      stream_type = pf::ElementFactory::streamtype[display_path_];
-  } else {
-      GMP_DEBUG_PRINT("Error: display_path_ index out of bounds");
-  }
-
-  pbnjson::JValue jsonValue = pbnjson::Object();
-  jsonValue.put("streamType", stream_type);
-  std::string jsonStr = jsonValue.stringify();
-
-  const std::string uri = "luna://com.webos.service.audio/registerTrack";
-  ResponseHandler nullcb = [this] (const char *s){
-    pbnjson::JValue payload = pbnjson::JDomParser::fromString(s);
-    bool returnValue = payload["returnValue"].asBool();
-    this->track_id_ = payload["trackId"].asString();
-
-    GstStructure* structure = gst_structure_new("props", "application.name", G_TYPE_STRING, track_id_.c_str(), nullptr);
-    g_object_set(this->aSink, "stream-properties", structure, nullptr);
-    gst_structure_free(structure);
-  };
-  bool ret = (lsClient_) ? lsClient_->CallAsync(uri.c_str(), jsonStr.c_str(), std::move(nullcb))
-                         : false;
-  return ret;
-}
-
-bool UriPlayer::UnRegisterTrack(){
-  pbnjson::JValue jsonValue = pbnjson::Object();
-
-  jsonValue.put("trackId", track_id_);
-  std::string jsonStr = jsonValue.stringify();
-
-  const std::string uri = "luna://com.webos.service.audio/unregisterTrack";
-  ResponseHandler nullcb = [] (const char *){};
-  bool ret = (lsClient_) ? lsClient_->CallAsync(uri.c_str(), jsonStr.c_str(),std::move(nullcb))
-                         : false;
-  return ret;
 }
 
 void UriPlayer::ParseOptionString(const std::string &str) {
