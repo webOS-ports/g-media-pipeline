@@ -29,9 +29,12 @@ std::string ElementFactory::streamtype[] = {""};
 GstElement * ElementFactory::Create(const std::string &pipelineType,
   const std::string &elementTypeName, uint32_t displayPath) {
   GstElement * element = GetGstElement(pipelineType, elementTypeName);
+  if (!element)
+    return NULL;
   pbnjson::JValue root = pbnjson::JDomParser::fromFile(gst_element_json_path);
   if (!root.isObject()) {
     GMP_DEBUG_PRINT("Gst element file parsing error");
+    gst_object_unref(element);
     return NULL;
   }
 
@@ -47,7 +50,9 @@ GstElement * ElementFactory::Create(const std::string &pipelineType,
 
     if (elements[i][elementTypeName].hasKey("device")) {
       pbnjson::JValue el = elements[i][elementTypeName]["device"];
+      // The config may list more devices than streamtype has room for.
       if (el.isArray() && displayPath < el.arraySize()
+        && displayPath < sizeof(streamtype) / sizeof(streamtype[0])
         && el[displayPath].isString()) {
         GMP_DEBUG_PRINT("Select device %d - name : %s",
           displayPath, el[displayPath].asString().c_str());

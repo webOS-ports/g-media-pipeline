@@ -20,6 +20,7 @@
 #include <gst/gst.h>
 #include <pbnjson.hpp>
 #include <algorithm>
+#include <cctype>
 #include <regex>
 
 #include "PlayerFactory.h"
@@ -46,9 +47,10 @@ std::shared_ptr<gmp::player::Player> PlayerFactory::CreatePlayer(const std::stri
   }
   pbnjson::JValue parsed = jdparser.getDom();
 
-  if (parsed.hasKey("uri")) {
+  if (parsed.hasKey("uri") && parsed["uri"].isString()) {
     const std::string uri = parsed["uri"].asString();
-    GMP_INFO_PRINT("uri = %s", uri.c_str());
+    // A URI can carry tokens: keep it out of the info log.
+    GMP_DEBUG_PRINT("uri = %s", uri.c_str());
 
     playerType = GMP_PLAYER_TYPE_URI;
 
@@ -80,8 +82,10 @@ std::string PlayerFactory::GetProtocolType(const std::string &uri) {
   std::string::const_iterator prot_i = search(uri.begin(), uri.end(),
                                            prot_end.begin(), prot_end.end());
   protocolType.reserve(distance(uri.begin(), prot_i));
-  transform(uri.begin(), prot_i,std::back_inserter(protocolType),
-              std::ptr_fun<int,int>(tolower));
+  // std::ptr_fun is gone in C++17, and tolower() of a negative char is
+  // undefined.
+  transform(uri.begin(), prot_i, std::back_inserter(protocolType),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
   return protocolType;
 }
 
