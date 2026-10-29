@@ -14,7 +14,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-webos_test_provider(GOOGLE_TEST)
+# webos_test_provider(GOOGLE_TEST) builds googletest from a source tree
+# that the build does not have; use the installed one.
+find_package(GTest REQUIRED)
+set(WEBOS_GTEST_LIBRARIES GTest::gtest_main GTest::gtest)
 
 add_subdirectory(lsm_connector)
 add_subdirectory(wayland_foreign)

@@ -179,6 +179,18 @@ int wl_display_dispatch(struct wl_display *display)
     return 1;
 }
 
+// Wayland::Foreign waits for the globals with a roundtrip: the same events.
+int wl_display_roundtrip(struct wl_display *display)
+{
+    callAPI("wl_display_roundtrip");
+    return wl_display_dispatch(display);
+}
+
+void wl_registry_destroy(struct wl_registry *wl_registry)
+{
+    callAPI("wl_registry_destroy");
+}
+
 void wl_webos_shell_destroy(struct wl_webos_shell *wl_webos_shell)
 {
     callAPI("wl_webos_shell_destroy");

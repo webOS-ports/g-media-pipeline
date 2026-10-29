@@ -293,7 +293,7 @@ static gboolean intr_handler(gpointer user_data)
   return G_SOURCE_REMOVE;
 }
 
-gboolean handleBusCallback (GstBus * bus,
+gboolean handleBusCallback (GstBus * /*bus*/,
                                              GstMessage * msg,
                                              gpointer data)
 {
@@ -327,7 +327,7 @@ gboolean handleBusCallback (GstBus * bus,
   return TRUE;
 }
 
-GstBusSyncReply handleSyncBusCallback(GstBus * bus,
+GstBusSyncReply handleSyncBusCallback(GstBus * /*bus*/,
                                                        GstMessage * msg,
                                                        gpointer data)
 {
@@ -394,7 +394,6 @@ static void pad_added_handler (GstElement *src, GstPad *new_pad, GstElement *sin
 	else
 		std::cout << "type : '" << new_pad_type << "', is ignored" << std::endl;
 
-exit:
     if (new_pad_caps != NULL) {
 	    gst_caps_unref (new_pad_caps);
 	    gst_object_unref (sink_pad);

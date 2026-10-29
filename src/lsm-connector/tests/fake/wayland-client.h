@@ -90,6 +90,8 @@ struct wl_display *wl_display_connect(const char *name);
 struct wl_registry *wl_display_get_registry(struct wl_display *wl_display);
 int wl_registry_add_listener(struct wl_registry *wl_registry, const struct wl_registry_listener *listener, void *data);
 int wl_display_dispatch(struct wl_display *display);
+int wl_display_roundtrip(struct wl_display *display);
+void wl_registry_destroy(struct wl_registry *wl_registry);
 void wl_webos_shell_destroy(struct wl_webos_shell *wl_webos_shell);
 void wl_shell_destroy(struct wl_shell *wl_shell);
 void wl_compositor_destroy(struct wl_compositor *wl_compositor);

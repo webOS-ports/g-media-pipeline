@@ -14,7 +14,7 @@ TEST_F(WaylandImporterTest1, InitializeAndFinalize)
     //Arrange
     clearCallLog();
     bool expected = true;
-    struct wl_registry *registry;
+    struct wl_registry *registry = nullptr;  // the fake ignores it
     struct wl_webos_foreign *foreign = (struct wl_webos_foreign *)wl_registry_bind(registry, 0, &wl_webos_foreign_interface, 0);
 
     const char *windowID  = "TEST_WINDOWID";
@@ -53,7 +53,7 @@ protected:
     }
 
     Wayland::Importer importer;
-    struct wl_registry *registry;
+    struct wl_registry *registry = nullptr;  // the fake ignores it
     struct wl_webos_foreign *foreign;
 };
 
