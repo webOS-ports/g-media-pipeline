@@ -170,10 +170,14 @@ bool UriRtpPlayer::LoadPipeline() {
     return false;
   }
 
-  gint scale_width = VIDEO_SCALE_WIDTH;
-  gint scale_height = (source_info_.video_streams[0].height * scale_width) /
-                     source_info_.video_streams[0].width;
-  lsm_connector_.setVideoSize(scale_width, scale_height);
+  // As in UriPlayer: no video stream, or no size yet, would divide by zero.
+  if (!source_info_.video_streams.empty() &&
+      source_info_.video_streams[0].width > 0) {
+    gint scale_width = VIDEO_SCALE_WIDTH;
+    gint scale_height = (source_info_.video_streams[0].height * scale_width) /
+                       source_info_.video_streams[0].width;
+    lsm_connector_.setVideoSize(scale_width, scale_height);
+  }
 
   gst_bin_add_many(GST_BIN(pipeline_),pSrcElement_, pDecElement_, pAConvertElement_, aSink, pVSinkElement_, NULL);
   gst_bin_add(GST_BIN(pipeline_), pVConvertElement_);

@@ -665,10 +665,15 @@ bool UriPlayer::LoadPipeline() {
         return false;
       }
 
-      gint scale_width = VIDEO_SCALE_WIDTH;
-      gint scale_height = (source_info_.video_streams[0].height * scale_width) /
-                         source_info_.video_streams[0].width;
-      lsm_connector_.setVideoSize(scale_width, scale_height);
+      // An audio-only source has no video stream, and one whose size is
+      // not known yet has a width of 0: either would divide by zero.
+      if (!source_info_.video_streams.empty() &&
+          source_info_.video_streams[0].width > 0) {
+        gint scale_width = VIDEO_SCALE_WIDTH;
+        gint scale_height = (source_info_.video_streams[0].height * scale_width) /
+                           source_info_.video_streams[0].width;
+        lsm_connector_.setVideoSize(scale_width, scale_height);
+      }
 
       gst_bin_add_many(GST_BIN(vSink), videoConvert, capsFilter, videoSink, NULL);
       if (!gst_element_link_many(videoConvert, capsFilter, videoSink, NULL)) {
