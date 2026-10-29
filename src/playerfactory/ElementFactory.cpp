@@ -51,7 +51,8 @@ GstElement * ElementFactory::Create(const std::string &pipelineType,
     if (elements[i][elementTypeName].hasKey("device")) {
       pbnjson::JValue el = elements[i][elementTypeName]["device"];
       // The config may list more devices than streamtype has room for.
-      if (el.isArray() && displayPath < el.arraySize()
+      if (el.isArray() && el.arraySize() > 0
+        && displayPath < static_cast<size_t>(el.arraySize())
         && displayPath < sizeof(streamtype) / sizeof(streamtype[0])
         && el[displayPath].isString()) {
         GMP_DEBUG_PRINT("Select device %d - name : %s",

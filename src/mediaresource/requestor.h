@@ -100,8 +100,8 @@ class ResourceRequestor {
 
   void allowPolicyAction(const bool allow);
 
-  bool muteAudio(bool mute) { return false; }
-  bool muteVideo(bool mute) { return false; }
+  bool muteAudio(bool /*mute*/) { return false; }
+  bool muteVideo(bool /*mute*/) { return false; }
 
   bool setSourceInfo(const gmp::base::source_info_t &sourceInfo);
   void setAppId(std::string id);

@@ -34,11 +34,11 @@ AbstractPlayer::AbstractPlayer() :
 AbstractPlayer::~AbstractPlayer() {
 }
 
-bool AbstractPlayer::Load(const std::string &uri) {
+bool AbstractPlayer::Load(const std::string &/*uri*/) {
   return true;
 }
 
-bool AbstractPlayer::Load(const MEDIA_LOAD_DATA_T* loadData) {
+bool AbstractPlayer::Load(const MEDIA_LOAD_DATA_T* /*loadData*/) {
   return true;
 }
 
@@ -77,15 +77,15 @@ bool AbstractPlayer::Pause() {
   return true;
 }
 
-bool AbstractPlayer::SetPlayRate(const double rate) {
+bool AbstractPlayer::SetPlayRate(const double /*rate*/) {
   return true;
 }
 
-bool AbstractPlayer::Seek(const int64_t msecond) {
+bool AbstractPlayer::Seek(const int64_t /*msecond*/) {
   return true;
 }
 
-bool AbstractPlayer::SetVolume(int volume) {
+bool AbstractPlayer::SetVolume(int /*volume*/) {
   return false;
 }
 
@@ -97,7 +97,7 @@ bool AbstractPlayer::SetPlane(int planeId) {
 
 bool AbstractPlayer::SetDisplayPath(const uint32_t display_path) {
   GMP_DEBUG_PRINT("display_path: %u", display_path);
-  display_path_ = (display_path > SECONDARY_DISPLAY) ? DEFAULT_DISPLAY : display_path;
+  display_path_ = (display_path > SECONDARY_DISPLAY) ? static_cast<uint32_t>(DEFAULT_DISPLAY) : display_path;
   return true;
 }
 
@@ -105,7 +105,7 @@ void AbstractPlayer::notifyFunctionUMSPolicyAction() {
 }
 
 bool AbstractPlayer::UpdateVideoResData(
-    const gmp::base::source_info_t &sourceInfo) {
+    const gmp::base::source_info_t &/*sourceInfo*/) {
   return true;
 }
 
@@ -121,8 +121,8 @@ bool AbstractPlayer::Flush() {
   return true;
 }
 
-MEDIA_STATUS_T AbstractPlayer::Feed(const guint8* pBuffer,
-    guint32 bufferSize, guint64 pts, MEDIA_DATA_CHANNEL_T esData) {
+MEDIA_STATUS_T AbstractPlayer::Feed(const guint8* /*pBuffer*/,
+    guint32 /*bufferSize*/, guint64 /*pts*/, MEDIA_DATA_CHANNEL_T /*esData*/) {
   return MEDIA_NOT_IMPLEMENTED;
 }
 

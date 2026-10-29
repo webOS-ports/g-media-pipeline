@@ -69,7 +69,7 @@ std::shared_ptr<gmp::player::Player> PlayerFactory::CreatePlayer(const std::stri
   return player;
 }
 
-std::shared_ptr<gmp::player::Player> PlayerFactory::CreatePlayer(const MEDIA_LOAD_DATA_T* loadData) {
+std::shared_ptr<gmp::player::Player> PlayerFactory::CreatePlayer(const MEDIA_LOAD_DATA_T* /*loadData*/) {
 
   std::shared_ptr<gmp::player::Player> player;
   player = std::make_shared<gmp::player::BufferPlainPlayer>();

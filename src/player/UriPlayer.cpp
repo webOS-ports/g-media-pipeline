@@ -370,7 +370,7 @@ void UriPlayer::NotifySourceInfo() {
     cbFunction_(NOTIFY_SOURCE_INFO, 0, nullptr, &source_info_);
 }
 
-gboolean UriPlayer::HandleBusMessage(GstBus *bus,
+gboolean UriPlayer::HandleBusMessage(GstBus * /*bus*/,
                                      GstMessage *message, gpointer user_data) {
   GstMessageType messageType = GST_MESSAGE_TYPE(message);
   if (messageType != GST_MESSAGE_QOS && messageType != GST_MESSAGE_TAG) {
@@ -512,7 +512,7 @@ gboolean UriPlayer::HandleBusMessage(GstBus *bus,
   return true;
 }
 
-GstBusSyncReply UriPlayer::HandleSyncBusMessage(GstBus * bus,
+GstBusSyncReply UriPlayer::HandleSyncBusMessage(GstBus * /*bus*/,
                                                 GstMessage * msg, gpointer data)
 {
   // This handler will be invoked synchronously, don't process any application
@@ -574,7 +574,7 @@ drop:
 }
 
 /* Added for _DR_ resolution change event support */
-gboolean UriPlayer::SourceChangedData(GstElement* gstAppSrc, gint width, gint height, gint fps_num, gint fps_den,
+gboolean UriPlayer::SourceChangedData(GstElement* /*gstAppSrc*/, gint width, gint height, gint fps_num, gint fps_den,
                              gpointer userData) {
   UriPlayer *player = reinterpret_cast<UriPlayer *>(userData);
   gmp::base::video_info_t videoInfo;
@@ -614,7 +614,7 @@ bool UriPlayer::LoadPipeline() {
     return false;
   }
 
-  auto sourceSetupCB = +[] (GstElement *playbin, GstElement *source, UriPlayer *player) -> void {
+  auto sourceSetupCB = +[] (GstElement * /*playbin*/, GstElement *source, UriPlayer *player) -> void {
     GstElementFactory *factory = gst_element_get_factory(source);
     const gchar *name = gst_plugin_feature_get_name(GST_PLUGIN_FEATURE(factory));
     GMP_DEBUG_PRINT("Found [%s] element!", name);
@@ -624,7 +624,7 @@ bool UriPlayer::LoadPipeline() {
     }
   };
 
-  auto elementSetupCB = +[] (GstElement *playbin, GstElement *element, UriPlayer *player) -> void {
+  auto elementSetupCB = +[] (GstElement * /*playbin*/, GstElement *element, UriPlayer *player) -> void {
     gchar *name = gst_element_get_name(element);
     GMP_DEBUG_PRINT("[%s] element deployed!", name);
 

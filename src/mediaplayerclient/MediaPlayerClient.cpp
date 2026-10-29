@@ -277,7 +277,7 @@ bool MediaPlayerClient::Seek(int position) {
   return player_->Seek(position);
 }
 
-bool MediaPlayerClient::SetPlane(int planeId) {
+bool MediaPlayerClient::SetPlane(int /*planeId*/) {
   GMP_DEBUG_PRINT("SetPlane is not Supported");
   return true;
 }
@@ -302,24 +302,24 @@ bool MediaPlayerClient::Flush() {
   return player_->Flush();
 }
 
-bool MediaPlayerClient::SetDisplayWindow(const long left,
-                                         const long top,
-                                         const long width,
-                                         const long height,
-                                         const bool isFullScreen) {
+bool MediaPlayerClient::SetDisplayWindow(const long /*left*/,
+                                         const long /*top*/,
+                                         const long /*width*/,
+                                         const long /*height*/,
+                                         const bool /*isFullScreen*/) {
   GMP_DEBUG_PRINT("Not supported. ignore this.");
   return true;
 }
 
-bool MediaPlayerClient::SetCustomDisplayWindow(const long srcLeft,
-                                               const long srcTop,
-                                               const long srcWidth,
-                                               const long srcHeight,
-                                               const long destLeft,
-                                               const long destTop,
-                                               const long destWidth,
-                                               const long destHeight,
-                                               const bool isFullScreen) {
+bool MediaPlayerClient::SetCustomDisplayWindow(const long /*srcLeft*/,
+                                               const long /*srcTop*/,
+                                               const long /*srcWidth*/,
+                                               const long /*srcHeight*/,
+                                               const long /*destLeft*/,
+                                               const long /*destTop*/,
+                                               const long /*destWidth*/,
+                                               const long /*destHeight*/,
+                                               const bool /*isFullScreen*/) {
   GMP_DEBUG_PRINT("Not supported. ignore this.");
   return true;
 }

@@ -25,8 +25,8 @@
 #include <mediaplayerclient/MediaPlayerClient.h>
 
 class UMSConnector;
-class UMSConnectorHandle;
-class UMSConnectorMessage;
+struct UMSConnectorHandle;
+struct UMSConnectorMessage;
 
 namespace gmp { namespace service {
 class Service {

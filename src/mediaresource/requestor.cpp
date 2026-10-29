@@ -152,7 +152,7 @@ bool ResourceRequestor::calcResources(const std::string &display_mode, const int
 }
 
 
-bool ResourceRequestor::acquireResources(void* meta, PortResource_t& resourceMMap, const std::string &display_mode, gmp::base::disp_res_t & res, const int32_t display_path) {
+bool ResourceRequestor::acquireResources(void* /*meta*/, PortResource_t& resourceMMap, const std::string &display_mode, gmp::base::disp_res_t & res, const int32_t display_path) {
 
   string payload;
 
@@ -205,7 +205,7 @@ bool ResourceRequestor::releaseResource() {
   return returnValue;
 }
 
-bool ResourceRequestor::reacquireResources(void* meta, PortResource_t& resourceMMap, const std::string &display_mode, gmp::base::disp_res_t & res, const int32_t display_path) {
+bool ResourceRequestor::reacquireResources(void* /*meta*/, PortResource_t& resourceMMap, const std::string &display_mode, gmp::base::disp_res_t & res, const int32_t display_path) {
   std::string new_resource;
   string response;
 
@@ -308,7 +308,7 @@ bool ResourceRequestor::policyActionHandler(const char *action,
   return allowPolicy_;
 }
 
-bool ResourceRequestor::parsePortInformation(const std::string& payload, PortResource_t& resourceMMap, gmp::base::disp_res_t & res) {
+bool ResourceRequestor::parsePortInformation(const std::string& payload, PortResource_t& resourceMMap, gmp::base::disp_res_t & /*res*/) {
   JDomParser parser;
   JSchemaFragment input_schema("{}");
   if (!parser.parse(payload, input_schema)) {

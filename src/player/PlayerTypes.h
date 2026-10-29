@@ -202,8 +202,8 @@ typedef struct MEDIA_LOAD_DATA {
                         extraSize(0), displayPath(0), windowId(NULL), channels(0), sampleRate(0),
                         blockAlign(0), bitRate(0), bitsPerSample(0), format(NULL),
                         audioObjectType(0), codecData(NULL), codecDataSize(0),
-                        drmType(DRM_UNKNOWN), svpVersion(0), liveStream(false),
-                        sampleFormat(GMP_AUDIO_FORMAT_UNKNOWN) {
+                        drmType(DRM_UNKNOWN), svpVersion(0),
+                        sampleFormat(GMP_AUDIO_FORMAT_UNKNOWN), liveStream(false) {
     }
     MEDIA_LOAD_DATA(guint32 maxWidth_, guint32 maxHeight_, guint32 maxFrameRate_,
                     GMP_VIDEO_CODEC videoCodec_, GMP_AUDIO_CODEC audioCodec_,

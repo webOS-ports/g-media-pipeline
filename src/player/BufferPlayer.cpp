@@ -249,7 +249,6 @@ bool BufferPlayer::SetPlayRate(const double rate) {
   GMP_INFO_PRINT("rate: %f, position: %" PRId64 "duration: %" PRId64,
                    rate, position, duration_);
 
-  gint64 currentPlayPosition = 0;
   GstState curState = GST_STATE_NULL;
   GstClockTime newBaseTime = GST_CLOCK_TIME_NONE;
   gboolean reset_start_time = FALSE;
@@ -573,7 +572,7 @@ std::string StreamStatusName(int streamType) {
   };
 
   if (streamType >= 0 &&
-        streamType < (sizeof(streamStatusName)/sizeof(streamStatusName[0]))) {
+        static_cast<size_t>(streamType) < (sizeof(streamStatusName)/sizeof(streamStatusName[0]))) {
     return std::string(streamStatusName[streamType]);
   }
 
@@ -582,7 +581,7 @@ std::string StreamStatusName(int streamType) {
 }
 
 gboolean BufferPlayer::HandleBusMessage(
-    GstBus *bus, GstMessage *message, gpointer user_data) {
+    GstBus * /*bus*/, GstMessage *message, gpointer user_data) {
   GstMessageType messageType = GST_MESSAGE_TYPE(message);
   if (messageType != GST_MESSAGE_QOS && messageType != GST_MESSAGE_TAG) {
     GMP_INFO_PRINT("Element[ %s ][ %d ][ %s ]", GST_MESSAGE_SRC_NAME(message),
@@ -675,7 +674,7 @@ gboolean BufferPlayer::HandleBusMessage(
 }
 
 GstBusSyncReply BufferPlayer::HandleSyncBusMessage(
-    GstBus *bus, GstMessage *message, gpointer user_data)
+    GstBus * /*bus*/, GstMessage *message, gpointer user_data)
 {
   // This handler will be invoked synchronously, don't process any application
   // message handling here
@@ -755,7 +754,7 @@ gboolean BufferPlayer::NotifyCurrentTime(gpointer user_data) {
   if (pos < 0)
     return true;
 
-  if (player->cbFunction_ && player->currentPts_ != pos) {
+  if (player->cbFunction_ && player->currentPts_ != static_cast<guint64>(pos)) {
     player->currentPts_ = pos;
     gint64 currentPtsInMs = (gint64)(pos / GST_MSECOND);
     player->cbFunction_(NOTIFY_CURRENT_TIME, currentPtsInMs, nullptr, nullptr);
@@ -1677,8 +1676,8 @@ void BufferPlayer::EnoughData(GstElement *gstAppSrc, gpointer userData) {
   }
 }
 
-gboolean BufferPlayer::SeekData(GstElement *gstAppSrc, guint64 position,
-                                gpointer userData) {
+gboolean BufferPlayer::SeekData(GstElement * /*gstAppSrc*/, guint64 /*position*/,
+                                gpointer /*userData*/) {
   GMP_DEBUG_PRINT("Appsrc signal : SeekData");
   return true;
 }
