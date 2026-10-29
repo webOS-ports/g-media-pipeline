@@ -84,6 +84,8 @@ class MediaPlayerClient {
 
  private:
     void LoadCommon();
+    void OnPolicyAction();
+    static bool IsEmulator();
     void RunCallback(const gint type, const gint64 numValue, const gchar *strValue, void *udata);
 
     std::shared_ptr<gmp::player::Player> player_;
@@ -91,6 +93,10 @@ class MediaPlayerClient {
 
     bool isLoaded_ = false;
     std::unique_ptr<gmp::resource::ResourceRequestor> resourceRequestor_;
+    // The policy action comes on another thread and is run later on the
+    // player's main context; by then this client may be gone.
+    std::shared_ptr<MediaPlayerClient *> self_ =
+        std::make_shared<MediaPlayerClient *>(this);
 
     std::string appId_;
     std::string connectionId_;

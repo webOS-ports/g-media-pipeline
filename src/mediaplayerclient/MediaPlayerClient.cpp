@@ -45,14 +45,20 @@ MediaPlayerClient::MediaPlayerClient(const std::string& appId, const std::string
   , playerType_(GMP_PLAYER_TYPE_NONE) {
   GMP_DEBUG_PRINT("appId: %s, connectionId: %s", appId.c_str(), connectionId.c_str());
 
-  if (appId.empty())
+  if (appId.empty()) {
     GMP_DEBUG_PRINT("appId is empty! resourceRequestor is not created");
-  else
-    resourceRequestor_ = std::make_unique<gmp::resource::ResourceRequestor>(appId, connectionId);
+  } else {
+    try {
+      resourceRequestor_ = std::make_unique<gmp::resource::ResourceRequestor>(appId, connectionId);
+    } catch (const std::exception &e) {
+      GMP_INFO_PRINT("resourceRequestor is not created: %s", e.what());
+    }
+  }
 }
 
 MediaPlayerClient::~MediaPlayerClient() {
   GMP_DEBUG_PRINT("");
+  self_.reset();
 
   if (resourceRequestor_)
     resourceRequestor_->setIsUnloading(true);
@@ -128,15 +134,36 @@ void MediaPlayerClient::LoadCommon() {
   player_->RegisterCbFunction(std::move(cb));
 
   if (resourceRequestor_) {
-    resourceRequestor_->registerUMSPolicyActionCallback([this]() {
-      base::error_t error;
-      error.errorCode = GMP_ERROR_RES_ALLOC;
-      error.errorText = "Resource Alloc Error";
-      NotifyFunction(NOTIFY_ERROR, GMP_ERROR_RES_ALLOC, nullptr, static_cast<void*>(&error));
-      if (!NotifyBackground())
-        GMP_DEBUG_PRINT("NotifyBackground fails");
+    using Weak = std::weak_ptr<MediaPlayerClient *>;
+    // Called on the ResourceManagerClient's thread: hand it over to the
+    // context the player runs on (NULL is the default one).
+    resourceRequestor_->registerUMSPolicyActionCallback(
+        [weak = Weak(self_), context = playerContext_]() {
+      g_main_context_invoke_full(context, G_PRIORITY_DEFAULT,
+          [](gpointer data) -> gboolean {
+            if (auto self = static_cast<Weak *>(data)->lock())
+              (*self)->OnPolicyAction();
+            return G_SOURCE_REMOVE;
+          },
+          new Weak(weak),
+          [](gpointer data) { delete static_cast<Weak *>(data); });
     });
   }
+}
+
+void MediaPlayerClient::OnPolicyAction() {
+  base::error_t error;
+  error.errorCode = GMP_ERROR_RES_ALLOC;
+  error.errorText = "Resource Alloc Error";
+  NotifyFunction(NOTIFY_ERROR, GMP_ERROR_RES_ALLOC, nullptr, static_cast<void*>(&error));
+  if (!NotifyBackground())
+    GMP_DEBUG_PRINT("NotifyBackground fails");
+}
+
+// The emulator has no media resources to acquire. The old test
+// (no "qemux86" || no "qemux86-64") only skipped them on qemux86-64.
+bool MediaPlayerClient::IsEmulator() {
+  return pf::ElementFactory::GetPlatform().find("qemux86") != std::string::npos;
 }
 
 // Unmanaged case
@@ -390,8 +417,7 @@ void MediaPlayerClient::NotifyFunction(const gint cbType, const gint64 numValue,
     }
     case NOTIFY_ACQUIRE_RESOURCE: {
       ACQUIRE_RESOURCE_INFO_T* info = static_cast<ACQUIRE_RESOURCE_INFO_T*>(udata);
-      if (pf::ElementFactory::GetPlatform().find("qemux86") == std::string::npos ||
-          pf::ElementFactory::GetPlatform().find("qemux86-64") == std::string::npos)
+      if (!IsEmulator())
         info->result = AcquireResources(*(info->sourceInfo), info->displayMode, numValue);
       else
         info->result = true;
@@ -399,8 +425,7 @@ void MediaPlayerClient::NotifyFunction(const gint cbType, const gint64 numValue,
     }
     case NOTIFY_REACQUIRE_RESOURCE: {
       ACQUIRE_RESOURCE_INFO_T* info = static_cast<ACQUIRE_RESOURCE_INFO_T*>(udata);
-      if (pf::ElementFactory::GetPlatform().find("qemux86") == std::string::npos ||
-          pf::ElementFactory::GetPlatform().find("qemux86-64") == std::string::npos)
+      if (!IsEmulator())
         info->result = ReacquireResources(*(info->sourceInfo), info->displayMode, numValue);
       else
         info->result = true;

@@ -22,7 +22,9 @@
 #include <string>
 #include <functional>
 #include <memory>
+#include <atomic>
 #include <map>
+#include <mutex>
 #include <dto_types.h>
 #include <pbnjson.hpp>
 
@@ -80,7 +82,10 @@ class ResourceRequestor {
   virtual ~ResourceRequestor();
 
   const std::string getConnectionId() const { return connectionId_; }
-  void registerUMSPolicyActionCallback(Functor callback) { cb_ = std::move(callback); }
+  void registerUMSPolicyActionCallback(Functor callback) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    cb_ = std::move(callback);
+  }
   void registerPlaneIdCallback(PlaneIDFunctor callback) { planeIdCb_ = std::move(callback); }
 
   bool acquireResources(void* meta, PortResource_t& resourceMMap, const std::string &display_mode, gmp::base::disp_res_t & res, const int32_t display_path = 0);
@@ -133,8 +138,11 @@ class ResourceRequestor {
   videoResData_t videoResData_;
   audioResData_t audioResData_;
   ums::video_info_t video_info_;
-  bool isUnloading_;
-  bool allowPolicy_;
+  // policyActionHandler() runs on the ResourceManagerClient's own thread:
+  // mutex_ guards cb_ and the two resource strings against the caller's.
+  std::mutex mutex_;
+  std::atomic<bool> isUnloading_;
+  std::atomic<bool> allowPolicy_;
 };
 
 }  // namespace resource
