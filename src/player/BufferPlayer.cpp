@@ -692,6 +692,7 @@ GstBusSyncReply BufferPlayer::HandleSyncBusMessage(
       gst_structure_set(gst_context_writable_structure (context),
           "handle", G_TYPE_POINTER, connector->getDisplay(), nullptr);
       gst_element_set_context(GST_ELEMENT(GST_MESSAGE_SRC(message)), context);
+      gst_context_unref(context);
       goto drop;
     }
     case GST_MESSAGE_ELEMENT:{
@@ -998,9 +999,11 @@ bool BufferPlayer::AddAudioSinkElement() {
     return false;
   }
 
-  std::string aSinkName = (use_audio ? "audio-sink" : "fake-sink");
-  audioSink_ = pf::ElementFactory::Create("custom", aSinkName,
-                                          display_path_);
+  // No gst_elements.conf has a "fake-sink" entry: without audio, use a
+  // fakesink.
+  audioSink_ = use_audio
+      ? pf::ElementFactory::Create("custom", "audio-sink", display_path_)
+      : gst_element_factory_make("fakesink", "audio-fakesink");
 
   //set stream-properties for pulsesink
   if (!RegisterTrack()) {
@@ -1174,7 +1177,8 @@ bool BufferPlayer::AddVideoSinkElement() {
    GMP_DEBUG_PRINT("Create and add video sink element");
 
   videoSink_ = pf::ElementFactory::Create("custom", "video-sink");
-  g_object_set(G_OBJECT(videoSink_), "qos", false, nullptr);
+  if (videoSink_)
+    g_object_set(G_OBJECT(videoSink_), "qos", false, nullptr);
 
   if (!AddAndLinkElement(videoSink_)) {
     GMP_DEBUG_PRINT("Failed to add & link video sink element");
@@ -1186,12 +1190,23 @@ bool BufferPlayer::AddVideoSinkElement() {
   return true;
 }
 
+// Undoes a CreatePipeline() that failed half way. With pipeline_ gone,
+// Unload() returns early and UnloadImpl() never runs, so the bus watch (it
+// points at this player) and the audiod track have to go here.
 void BufferPlayer::FreePipelineElements() {
   audioSrcInfo_.reset();
   videoSrcInfo_.reset();
 
-  gst_object_unref(pipeline_);
-  pipeline_ = NULL;
+  DisconnectBusCallback();
+  if (!UnRegisterTrack()) {
+    GMP_DEBUG_PRINT("UnRegisterTrack failed ");
+  }
+
+  if (pipeline_) {
+    gst_element_set_state(pipeline_, GST_STATE_NULL);
+    gst_object_unref(pipeline_);
+    pipeline_ = NULL;
+  }
 }
 
 bool BufferPlayer::AddAndLinkElement(GstElement* new_element) {
@@ -1361,6 +1376,8 @@ bool BufferPlayer::SeekInternal(const int64_t msecond) {
                         GST_SEEK_TYPE_SET, msecond * GST_MSECOND,
                         GST_SEEK_TYPE_NONE, 0)) {
     GMP_DEBUG_PRINT("Seek failed!!!");
+    // The pipeline goes on from where it was; let the feeding go on too.
+    feedPossible_ = true;
     return false;
   }
 
@@ -1737,7 +1754,7 @@ base::source_info_t BufferPlayer::GetSourceInfo(
 
   audio_stream_info.codec = loadData->audioCodec;
   audio_stream_info.bit_rate = loadData->bitRate;
-  audio_stream_info.sample_rate = loadData->bitsPerSample;
+  audio_stream_info.sample_rate = loadData->sampleRate;
   audio_stream_info.channels = loadData->channels;
 
   base::program_info_t program;
