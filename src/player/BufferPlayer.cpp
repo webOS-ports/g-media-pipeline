@@ -37,6 +37,7 @@
 #include "util/util.h"
 #include "dsi/DSIGeneratorFactory.h"
 #include "ElementFactory.h"
+#include "VideoOverlay.h"
 
 #define CURR_TIME_INTERVAL_MS    500
 #define LOAD_DONE_TIMEOUT_MS     10
@@ -700,25 +701,8 @@ GstBusSyncReply BufferPlayer::HandleSyncBusMessage(
         break;
       }
       GMP_DEBUG_PRINT("Set wayland window handle : %p", connector->getSurface());
-      if (connector->getSurface()) {
-        GstVideoOverlay *videoOverlay = GST_VIDEO_OVERLAY(GST_MESSAGE_SRC(message));
-        gst_video_overlay_set_window_handle(videoOverlay,
-                                            (guintptr)(connector->getSurface()));
-
-        gint video_disp_height = 0;
-        gint video_disp_width = 0;
-        connector->getVideoSize(video_disp_width, video_disp_height);
-        if (video_disp_width && video_disp_height) {
-          gint display_x = (1920 - video_disp_width) / 2;
-          gint display_y = (1080 - video_disp_height) / 2;
-          GMP_DEBUG_PRINT("Set render rectangle :(%d, %d, %d, %d)",
-                          display_x, display_y, video_disp_width, video_disp_height);
-          gst_video_overlay_set_render_rectangle(videoOverlay,
-              display_x, display_y, video_disp_width, video_disp_height);
-
-          gst_video_overlay_expose(videoOverlay);
-        }
-      }
+      if (connector->getSurface())
+        AttachVideoOverlay(connector, GST_VIDEO_OVERLAY(GST_MESSAGE_SRC(message)));
       goto drop;
     }
     default:

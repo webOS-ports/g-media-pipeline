@@ -26,6 +26,7 @@
 #include <gst/video/videooverlay.h>
 #include "ElementFactory.h"
 #include "SourceInfoNotify.h"
+#include "VideoOverlay.h"
 
 #include "parser/parser.h"
 
@@ -550,25 +551,8 @@ GstBusSyncReply UriPlayer::HandleSyncBusMessage(GstBus * /*bus*/,
         break;
       }
       GMP_DEBUG_PRINT("Set wayland window handle : %p", connector->getSurface());
-      if (connector->getSurface()) {
-        GstVideoOverlay *videoOverlay = GST_VIDEO_OVERLAY(GST_MESSAGE_SRC(msg));
-        gst_video_overlay_set_window_handle(videoOverlay,
-            (guintptr)(connector->getSurface()));
-
-        gint video_disp_height = 0;
-        gint video_disp_width = 0;
-        connector->getVideoSize(video_disp_width, video_disp_height);
-        if (video_disp_width && video_disp_height) {
-          gint display_x = (1920 - video_disp_width) / 2;
-          gint display_y = (1080 - video_disp_height) / 2;
-          GMP_DEBUG_PRINT("Set render rectangle :(%d, %d, %d, %d)",
-                          display_x, display_y, video_disp_width, video_disp_height);
-          gst_video_overlay_set_render_rectangle(videoOverlay,
-              display_x, display_y, video_disp_width, video_disp_height);
-
-          gst_video_overlay_expose(videoOverlay);
-        }
-      }
+      if (connector->getSurface())
+        AttachVideoOverlay(connector, GST_VIDEO_OVERLAY(GST_MESSAGE_SRC(msg)));
       goto drop;
     }
     default:

@@ -221,6 +221,36 @@ int wl_display_flush(struct wl_display *display)
     return 1;
 }
 
+int wl_display_prepare_read(struct wl_display *display)
+{
+    callAPI("wl_display_prepare_read");
+    return 0;
+}
+
+int wl_display_dispatch_pending(struct wl_display *display)
+{
+    callAPI("wl_display_dispatch_pending");
+    return 0;
+}
+
+// No socket: poll() skips a negative fd, so nothing is ever readable.
+int wl_display_get_fd(struct wl_display *display)
+{
+    callAPI("wl_display_get_fd");
+    return -1;
+}
+
+int wl_display_read_events(struct wl_display *display)
+{
+    callAPI("wl_display_read_events");
+    return 0;
+}
+
+void wl_display_cancel_read(struct wl_display *display)
+{
+    callAPI("wl_display_cancel_read");
+}
+
 void wl_webos_surface_group_compositor_destroy(struct wl_webos_surface_group_compositor *wl_webos_surface_group_compositor)
 {
     callAPI("wl_webos_surface_group_compositor_destroy");
@@ -416,6 +446,9 @@ void wl_webos_exported_set_exported_window(struct wl_webos_exported *wl_webos_ex
     callAPI("wl_webos_exported_set_exported_window");
 }
 
+static const struct wl_webos_imported_listener *_imported_listener;
+static void *_imported_data;
+
 int wl_webos_imported_add_listener(struct wl_webos_imported *wl_webos_imported, const struct wl_webos_imported_listener *listener, void *data)
 {
     callAPI("wl_webos_imported_add_listener");
@@ -423,7 +456,19 @@ int wl_webos_imported_add_listener(struct wl_webos_imported *wl_webos_imported, 
     if (&_valid_webos_imported != wl_webos_imported)
         return 0;
 
+    _imported_listener = listener;
+    _imported_data     = data;
+
     return 1;
+}
+
+bool fake_send_destination_region_changed(uint32_t width, uint32_t height)
+{
+    if (!_imported_listener || !_imported_listener->destination_region_changed)
+        return false;
+
+    _imported_listener->destination_region_changed(_imported_data, &_valid_webos_imported, width, height);
+    return true;
 }
 
 void wl_webos_imported_set_surface_alignment(struct wl_webos_imported *wl_webos_imported, uint32_t format)
@@ -434,6 +479,8 @@ void wl_webos_imported_set_surface_alignment(struct wl_webos_imported *wl_webos_
 void wl_webos_imported_destroy(struct wl_webos_imported *wl_webos_imported)
 {
     callAPI("wl_webos_imported_destroy");
+    _imported_listener = nullptr;
+    _imported_data     = nullptr;
 }
 
 void wl_webos_imported_attach_punchthrough(struct wl_webos_imported *wl_webos_imported)

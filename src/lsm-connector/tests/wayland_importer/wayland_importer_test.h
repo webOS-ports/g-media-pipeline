@@ -113,3 +113,27 @@ TEST_F(WaylandImporterTest2, Surface)
 
     wl_surface_destroy(surface);
 }
+
+// The compositor's destination_region_changed reaches the handler, with the
+// size it was sent with.
+TEST_F(WaylandImporterTest2, DestinationRegionChanged)
+{
+    uint32_t width  = 0;
+    uint32_t height = 0;
+    int calls       = 0;
+    importer.setDestinationHandler([&](uint32_t w, uint32_t h) {
+        width  = w;
+        height = h;
+        ++calls;
+    });
+
+    ASSERT_TRUE(fake_send_destination_region_changed(448, 252));
+    EXPECT_EQ(1, calls);
+    EXPECT_EQ(448u, width);
+    EXPECT_EQ(252u, height);
+
+    // Without a handler the event is dropped.
+    importer.setDestinationHandler(nullptr);
+    ASSERT_TRUE(fake_send_destination_region_changed(480, 270));
+    EXPECT_EQ(1, calls);
+}

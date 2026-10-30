@@ -32,7 +32,9 @@ set(SRC_LIST
 )
 
 add_executable(${BIN_NAME} ${SRC_LIST})
-target_link_libraries(${BIN_NAME} rt dl m stdc++ ${WEBOS_GTEST_LIBRARIES})
+pkg_check_modules(GLIB2 REQUIRED glib-2.0)
+target_include_directories(${BIN_NAME} PRIVATE ${GLIB2_INCLUDE_DIRS})
+target_link_libraries(${BIN_NAME} rt dl m stdc++ ${WEBOS_GTEST_LIBRARIES} ${GLIB2_LDFLAGS})
 
 install(TARGETS ${BIN_NAME} DESTINATION ${WEBOS_INSTALL_TESTSDIR}/starfish-media-pipeline/lsm-connector PERMISSIONS OWNER_EXECUTE OWNER_READ)
 

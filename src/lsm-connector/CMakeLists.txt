@@ -32,6 +32,10 @@ webos_add_compiler_flags(ALL ${WAYLAND_CLIENT_CFLAGS})
 pkg_check_modules(WAYLAND_WEBOS_CLIENT REQUIRED wayland-webos-client)
 webos_add_compiler_flags(ALL ${WAYLAND_WEBOS_CLIENT_CFLAGS})
 
+# Connector reads the compositor's events on a GLib timeout.
+pkg_check_modules(GLIB2 REQUIRED glib-2.0)
+webos_add_compiler_flags(ALL ${GLIB2_CFLAGS})
+
 pkg_check_modules(PMLOGLIB QUIET PmLogLib)
 if (PMLOGLIB_FOUND)
   set(PMLOG_LIBRARIES PmLogLib)
@@ -56,7 +60,8 @@ set_target_properties (${LSM_CONNECTOR_LIB} PROPERTIES VERSION 1.0 SOVERSION 1)
 target_link_libraries(${LSM_CONNECTOR_LIB}
     ${PMLOG_LIBRARIES}
     ${WAYLAND_CLIENT_LDFLAGS}
-    ${WAYLAND_WEBOS_CLIENT_LDFLAGS})
+    ${WAYLAND_WEBOS_CLIENT_LDFLAGS}
+    ${GLIB2_LDFLAGS})
 
 install(TARGETS ${LSM_CONNECTOR_LIB} DESTINATION lib)
 
