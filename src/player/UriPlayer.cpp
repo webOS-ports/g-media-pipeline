@@ -25,6 +25,7 @@
 #include <unistd.h>
 #include <gst/video/videooverlay.h>
 #include "ElementFactory.h"
+#include "SourceInfoNotify.h"
 
 #include "parser/parser.h"
 
@@ -375,8 +376,7 @@ bool UriPlayer::GetSourceInfo() {
 
 void UriPlayer::NotifySourceInfo() {
   // TODO(anonymous): Support multiple video/audio stream case
-  if (cbFunction_)
-    cbFunction_(NOTIFY_SOURCE_INFO, 0, nullptr, &source_info_);
+  player::NotifySourceInfo(cbFunction_, source_info_);
 }
 
 gboolean UriPlayer::HandleBusMessage(GstBus * /*bus*/,
