@@ -8,6 +8,7 @@ pkg_check_modules(UNIT_DEPS REQUIRED gstreamer-pbutils-1.0 pbnjson_cpp PmLogLib)
 add_executable(gmp-unit-tests
     DSIGeneratorAACTest.cpp
     ParserTest.cpp
+    SourceInfoNotifyTest.cpp
     UriPlayerFactoryTest.cpp
     ../../src/dsi/DSIGeneratorAAC.cpp
     ../../src/parser/parser.cpp
