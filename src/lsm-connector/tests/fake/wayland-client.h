@@ -71,6 +71,18 @@ struct wl_webos_imported_listener {
                                        struct wl_webos_imported *wl_webos_imported,
                                        uint32_t width,
                                        uint32_t height);
+    void (*punchthrough_attached)(void *data,
+                                  struct wl_webos_imported *wl_webos_imported,
+                                  const char *context_id);
+    void (*punchthrough_detached)(void *data,
+                                  struct wl_webos_imported *wl_webos_imported,
+                                  const char *context_id);
+    void (*surface_attached)(void *data,
+                             struct wl_webos_imported *wl_webos_imported,
+                             struct wl_surface *surface);
+    void (*surface_detached)(void *data,
+                             struct wl_webos_imported *wl_webos_imported,
+                             struct wl_surface *surface);
 };
 
 struct wl_registry_listener {
@@ -97,6 +109,15 @@ void wl_shell_destroy(struct wl_shell *wl_shell);
 void wl_compositor_destroy(struct wl_compositor *wl_compositor);
 void wl_display_disconnect(struct wl_display *display);
 int wl_display_flush(struct wl_display *display);
+int wl_display_prepare_read(struct wl_display *display);
+int wl_display_dispatch_pending(struct wl_display *display);
+int wl_display_get_fd(struct wl_display *display);
+int wl_display_read_events(struct wl_display *display);
+void wl_display_cancel_read(struct wl_display *display);
+
+// Test hook: the compositor sends destination_region_changed to the
+// imported object; false when no listener was added.
+bool fake_send_destination_region_changed(uint32_t width, uint32_t height);
 void wl_webos_surface_group_compositor_destroy(struct wl_webos_surface_group_compositor *wl_webos_surface_group_compositor);
 struct wl_region *wl_compositor_create_region(struct wl_compositor *wl_compositor);
 void wl_region_add(struct wl_region *wl_region, int32_t x, int32_t y, int32_t width, int32_t height);

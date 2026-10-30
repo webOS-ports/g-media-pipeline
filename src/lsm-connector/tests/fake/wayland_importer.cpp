@@ -21,6 +21,21 @@
 namespace Wayland
 {
 
+namespace
+{
+void ignoreContext(void *, struct wl_webos_imported *, const char *) {}
+void ignoreSurface(void *, struct wl_webos_imported *, struct wl_surface *) {}
+} // namespace
+
+// As the real one: fake_send_destination_region_changed() reaches the handler.
+const struct wl_webos_imported_listener Importer::importedListener = {
+    handleDestinationRegionChanged,
+    ignoreContext,
+    ignoreContext,
+    ignoreSurface,
+    ignoreSurface,
+};
+
 Importer::Importer(void) : webosImported(nullptr) {}
 
 Importer::~Importer(void) {}
@@ -34,7 +49,23 @@ bool Importer::initialize(struct wl_webos_foreign *foreign, const char *windowID
     if (webosImported == nullptr)
         return false;
 
+    wl_webos_imported_add_listener(webosImported, &importedListener, this);
+
     return true;
+}
+
+void Importer::setDestinationHandler(DestinationHandler handler)
+{
+    destinationHandler = std::move(handler);
+    callAPI("Wayland::Importer::setDestinationHandler");
+}
+
+void Importer::handleDestinationRegionChanged(void *data, struct wl_webos_imported * /*imported*/,
+                                              uint32_t width, uint32_t height)
+{
+    const Importer *importer = static_cast<const Importer *>(data);
+    if (importer->destinationHandler)
+        importer->destinationHandler(width, height);
 }
 
 void Importer::finalize(void)

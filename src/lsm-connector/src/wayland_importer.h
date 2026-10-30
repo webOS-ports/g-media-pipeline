@@ -19,6 +19,7 @@
 #define _WAYLAND_IMPORTER_H_
 
 #include "common.h"
+#include <functional>
 #include <wayland-webos-foreign-client-protocol.h>
 
 namespace Wayland
@@ -40,10 +41,20 @@ public:
     void attachSurface(struct wl_surface *surface);
     void detachSurface(struct wl_surface *surface);
 
+    // The compositor's destination_region_changed: the size it shows the
+    // imported surface at, sent on attach and whenever it changes.
+    using DestinationHandler = std::function<void(uint32_t width, uint32_t height)>;
+    void setDestinationHandler(DestinationHandler handler);
+
 private:
     DISALLOW_COPY_AND_ASSIGN(Importer);
 
+    static void handleDestinationRegionChanged(void *data, struct wl_webos_imported *imported,
+                                               uint32_t width, uint32_t height);
+    static const struct wl_webos_imported_listener importedListener;
+
     struct wl_webos_imported *webosImported;
+    DestinationHandler destinationHandler;
 };
 
 } //namespace Wayland
